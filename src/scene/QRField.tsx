@@ -43,26 +43,22 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     const light: Cell[] = [];
     for (let r = 0; r < matrix.size; r++) {
       for (let c = 0; c < matrix.size; c++) {
-        if (!matrix.cells[r][c]) {
-          // light module → sea: a touch of per-cell variation for life
-          const v = (moduleRand(r, c) - 0.5) * 0.05;
-          light.push({ r, c, h: seaH, color: new THREE.Color(seaColor).offsetHSL(0, 0, v) });
-          continue;
-        }
         const qRow = r - qz;
         const qCol = c - qz;
         const nx = (qCol - center) / center;
         const ny = (qRow - center) / center;
         const dist = Math.min(1, Math.hypot(nx, ny) / Math.SQRT2);
-        const spec: ColumnSpec = theme.column({
-          qRow,
-          qCol,
-          modules: n,
-          nx,
-          ny,
-          dist,
-          rand: moduleRand(qRow, qCol),
-        });
+        const input = { qRow, qCol, modules: n, nx, ny, dist, rand: moduleRand(qRow, qCol) };
+        if (!matrix.cells[r][c]) {
+          // light module — theme decides (defaults to sea), with a little variation
+          const spec: ColumnSpec = theme.light
+            ? theme.light(input)
+            : { height: seaH, color: seaColor };
+          const v = (moduleRand(r, c) - 0.5) * 0.05;
+          light.push({ r, c, h: spec.height, color: new THREE.Color(spec.color).offsetHSL(0, 0, v) });
+          continue;
+        }
+        const spec: ColumnSpec = theme.column(input);
         dark.push({ r, c, h: spec.height, color: new THREE.Color(spec.color) });
       }
     }

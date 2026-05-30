@@ -16,7 +16,7 @@ import type { QRMatrix } from '../../qr/generate';
  */
 
 // --- sizing (module/voxel units) — church ~2x bigger ---
-const PAD_R = 13; // sand pad under the church
+const INNER_R = 17; // brown "grounds" plateau around the church (flat, calm, no trees, no sea)
 const PLAZA_R = 13; // round plaza covers the whole pad (so every cell is tiled = data)
 const BODY_R = 8; // church body half-width
 const BODY_H = 9; // church body height
@@ -30,8 +30,12 @@ const SAND_VAR = 0.06;
 // --- palette: bright sand vs a clearly-blue (but still dark enough to scan)
 //     Aegean sea. Sand stays the light "ink"; sea is the dark "paper". ---
 const SAND = '#ecdfbb';
-const SAND_ISLAND = '#f1e7cd';
 const SEA = '#144f68';
+// brown "grounds" around the church: light tan + dark earth (clean two-tone, no
+// blue/green here so the church reads clearly). Light reads "light", dark reads
+// "dark", so the QR still encodes & scans.
+const GROUND_LIGHT = '#e6d5a8'; // light tan (clearly "light")
+const GROUND_DARK = '#4a3526'; // dark chocolate earth (clearly "dark", like the sea's darkness)
 const STONE = '#e8e2d2';
 const WHITE = '#eef0ec';
 const WHITE_SH = '#dde0d8';
@@ -50,8 +54,8 @@ const QR_WALL_LIGHT = '#f3efe5'; // warm whitewash
 const QR_WALL_DARK = '#235f87'; // Aegean blue (blue-shuttered look)
 const QR_DOME_LIGHT = '#bcd7e8'; // pale sky
 const QR_DOME_DARK = '#154a6c'; // deep dome blue
-const QR_PLAZA_LIGHT = '#ecdfbb'; // pale sand (matches the terrain)
-const QR_PLAZA_DARK = '#2c6488'; // sea blue
+const QR_PLAZA_LIGHT = GROUND_LIGHT; // brown grounds — light tan
+const QR_PLAZA_DARK = GROUND_DARK; // brown grounds — dark earth
 const TRUNK = '#7b5a39';
 // tree foliage: the TOP voxel (what a top-down scanner sees) is a LIGHT green so
 // the cell still reads "light" like the sand module it covers — so a full-cell
@@ -320,11 +324,22 @@ export const cycladicTheme: QRTheme = {
   sunColor: '#fff4e2',
   ambient: 0.6,
 
+  // dark modules: flat LIGHT-BROWN tile across the church grounds (rMod <=
+  // INNER_R), raised SAND sandbars further out
   column: ({ qRow, qCol, modules, rand }) => {
     const center = (modules - 1) / 2;
     const rMod = Math.hypot(qCol - center, qRow - center);
-    if (rMod <= PAD_R) return { height: SAND_H, color: shade(SAND_ISLAND, (rand - 0.5) * 0.03) };
+    if (rMod <= INNER_R) return { height: SAND_H, color: shade(GROUND_LIGHT, (rand - 0.5) * 0.05) };
     return { height: SAND_H - 0.15 + rand * SAND_VAR, color: shade(SAND, (rand - 0.5) * 0.04) };
+  },
+
+  // light modules: flat DARK-BROWN tile across the church grounds (so no blue sea
+  // near the church), deep blue SEA further out
+  light: ({ qRow, qCol, modules, rand }) => {
+    const center = (modules - 1) / 2;
+    const rMod = Math.hypot(qCol - center, qRow - center);
+    if (rMod <= INNER_R) return { height: SAND_H, color: shade(GROUND_DARK, (rand - 0.5) * 0.06) };
+    return { height: SEA_H, color: SEA };
   },
 
   props: (matrix: QRMatrix): PropVoxel[] => {
@@ -337,20 +352,6 @@ export const cycladicTheme: QRTheme = {
     const out: PropVoxel[] = [];
 
     const rOf = (r: number, c: number) => Math.hypot(c - qz - center, r - qz - center);
-
-    // fill only the small church pad solid (the church needs flat ground)
-    for (let r = 0; r < matrix.size; r++)
-      for (let c = 0; c < matrix.size; c++) {
-        if (matrix.cells[r][c]) continue;
-        if (rOf(r, c) > PAD_R) continue;
-        out.push({
-          col: c,
-          row: r,
-          y: SAND_H - 1,
-          size: 1,
-          color: shade(SAND_ISLAND, (rand2(r, c) - 0.5) * 0.03),
-        });
-      }
 
     // the seeded church — its top surfaces encode the QR (light/dark tiles)
     out.push(...buildChurch(ccol, crow, SAND_H, rng, matrix));
@@ -365,9 +366,9 @@ export const cycladicTheme: QRTheme = {
     );
     for (let r = 0; r < matrix.size; r++)
       for (let c = 0; c < matrix.size; c++) {
-        if (!matrix.cells[r][c]) continue; // real sand only
+        if (!matrix.cells[r][c]) continue; // real sand only (sandbars beyond the grounds)
         const rMod = rOf(r, c);
-        if (rMod < PAD_R + 1 || rMod > PAD_R + 12) continue; // band around the church
+        if (rMod < INNER_R + 1 || rMod > INNER_R + 5) continue; // ring beyond grounds, off timing
         const sec =
           Math.floor(
             ((Math.atan2(r - qz - center, c - qz - center) + Math.PI) / (2 * Math.PI)) * SECTORS,
@@ -390,8 +391,8 @@ export const cycladicTheme: QRTheme = {
     // thinning at the edges) — every tree sits on a real sand module, light crown
     const placed = new Set<number>();
     let trees = 0;
-    const MAX_TREES = 190;
-    const CR = 3; // bigger, thicker groves
+    const MAX_TREES = 150;
+    const CR = 2; // grove radius (kept tight to stay in the ring, off the timing pattern)
     for (const anc of anchors)
       for (let dr = -CR; dr <= CR; dr++)
         for (let dc = -CR; dc <= CR; dc++) {
@@ -401,7 +402,8 @@ export const cycladicTheme: QRTheme = {
           const c = anc.c + dc;
           if (r < 0 || r >= matrix.size || c < 0 || c >= matrix.size) continue;
           if (!matrix.cells[r][c]) continue; // sand only
-          if (rOf(r, c) <= PAD_R) continue; // off the church
+          const rm = rOf(r, c);
+          if (rm <= INNER_R || rm > INNER_R + 5) continue; // only the sea ring, off the grounds & timing pattern
           const key = r * 10000 + c;
           if (placed.has(key)) continue;
           const rnd = rand2(r, c);
@@ -420,7 +422,7 @@ export const cycladicTheme: QRTheme = {
         if (matrix.cells[r][c]) continue;
         const rMod = rOf(r, c);
         const rnd = rand2(r, c);
-        if (rMod > PAD_R + 2 && rMod < PAD_R + 11 && rnd > 0.95) {
+        if (rMod > INNER_R + 1 && rMod < INNER_R + 9 && rnd > 0.95) {
           out.push({ col: c, row: r, y: SEA_H, size: 0.4 + rnd * 0.3, color: shade(ROCK, (rnd - 0.5) * 0.1) });
           rocks++;
         }

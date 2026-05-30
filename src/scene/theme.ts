@@ -71,6 +71,9 @@ export interface QRTheme {
   ambient?: number;
   /** per dark-module column shape + color in 3D */
   column: (i: ColumnInput) => ColumnSpec;
+  /** optional per-light-module shape + color in 3D (defaults to
+   *  lightSceneColor/lightSceneHeight); lets light cells vary by position */
+  light?: (i: ColumnInput) => ColumnSpec;
   /** optional decorative voxels for 3D view, given the full matrix */
   props?: (matrix: QRMatrix) => PropVoxel[];
 }
