@@ -15,13 +15,14 @@ import type { QRMatrix } from '../../qr/generate';
  * so error-correction capacity — and scannability — is unchanged across inputs.
  */
 
-// --- sizing (module/voxel units) — church ~2x bigger ---
+// --- sizing (module/voxel units): biggest church that still reliably scans
+//     (the data-bearing dome smears past this in the top-down perspective) ---
 const INNER_R = 17; // brown "grounds" plateau around the church (flat, calm, no trees, no sea)
-const PLAZA_R = 13; // round plaza covers the whole pad (so every cell is tiled = data)
-const BODY_R = 8; // church body half-width
-const BODY_H = 9; // church body height
-const DRUM_R = 8; // dome drum radius (matches the dome so the windowed drum shows)
-const DOME_R = 8; // dome base radius
+const PLAZA_R = 16; // round plaza covers the whole pad (so every cell is tiled = data)
+const BODY_R = 10; // church body half-width
+const BODY_H = 9; // church body height (modest so the dome doesn't smear in top-down)
+const DRUM_R = 10; // dome drum radius (matches the dome so the windowed drum shows)
+const DOME_R = 10; // dome base radius
 
 const SAND_H = 1.3;
 const SEA_H = 0.5;
@@ -268,47 +269,22 @@ function buildChurch(
  * doesn't flip a QR bit.
  */
 function makeTree(col: number, row: number, gy: number, rnd: number): PropVoxel[] {
-  const lg = LEAF_LIGHT[Math.floor(rnd * 997) % LEAF_LIGHT.length]; // light TOP (reads light)
+  const lg = LEAF_LIGHT[Math.floor(rnd * 997) % LEAF_LIGHT.length]; // light crown (reads light)
   const dg = LEAF_DARK[Math.floor(rnd * 601) % LEAF_DARK.length]; // dark body (depth)
-  const t = TRUNK;
-  const W = 0.92; // canopy nearly fills the cell, so the top is a clean QR "light" cell
-  // taller, fuller trees: a trunk + a stack of dark-green body voxels with a
-  // light-green crown on top (only the crown matters for the top-down read)
-  if (rnd < 0.18) {
-    // small tree (~1.6)
-    return [
-      { col, row, y: gy, size: 0.42, color: t },
-      { col, row, y: gy + 0.5, size: W, color: lg },
-    ];
+  // ~2x taller: a trunk + a tall stack of dark-green body voxels with a light
+  // crown on top (only the crown matters for the top-down read). Crown kept a
+  // bit narrower (W) so the taller trees don't overhang neighbours from above.
+  const W = 0.98; // canopy FILLS the cell so the groves read solid (no gappy grid)
+  const tiers = rnd < 0.2 ? 3 : rnd < 0.5 ? 5 : rnd < 0.78 ? 7 : 9; // small → round → tall → cypress
+  const out: PropVoxel[] = [{ col, row, y: gy, size: 0.5, color: TRUNK }];
+  // top HALF of the canopy is light green so that — even when a taller tree
+  // leans in the top-down perspective — whatever is visible at the top stays
+  // "light" and never flips the cell; lower half is dark green for depth in iso
+  const lightFrom = Math.ceil(tiers / 2);
+  for (let i = 0; i < tiers; i++) {
+    out.push({ col, row, y: gy + 0.7 + i * 0.9, size: W, color: i >= lightFrom ? lg : dg });
   }
-  if (rnd < 0.48) {
-    // round tree (~2.7)
-    return [
-      { col, row, y: gy, size: 0.46, color: t },
-      { col, row, y: gy + 0.55, size: W, color: dg },
-      { col, row, y: gy + 1.4, size: W, color: dg },
-      { col, row, y: gy + 2.25, size: W, color: lg },
-    ];
-  }
-  if (rnd < 0.76) {
-    // tall tree (~3.6)
-    return [
-      { col, row, y: gy, size: 0.46, color: t },
-      { col, row, y: gy + 0.55, size: W, color: dg },
-      { col, row, y: gy + 1.4, size: W, color: dg },
-      { col, row, y: gy + 2.25, size: W, color: dg },
-      { col, row, y: gy + 3.1, size: W, color: lg },
-    ];
-  }
-  // cypress (~4.6 tall)
-  return [
-    { col, row, y: gy, size: 0.4, color: t },
-    { col, row, y: gy + 0.55, size: 0.86, color: dg },
-    { col, row, y: gy + 1.4, size: 0.86, color: dg },
-    { col, row, y: gy + 2.25, size: 0.86, color: dg },
-    { col, row, y: gy + 3.1, size: 0.86, color: dg },
-    { col, row, y: gy + 3.95, size: 0.82, color: lg },
-  ];
+  return out;
 }
 
 export const cycladicTheme: QRTheme = {
@@ -359,7 +335,7 @@ export const cycladicTheme: QRTheme = {
     // trees grouped into CLUMPS (small groves), not scattered singles: pick a
     // few anchor cells spread around the church, then grow a tight grove of
     // trees on the sand right around each anchor (open sand between clumps)
-    const SECTORS = 12;
+    const SECTORS = 14;
     const buckets: Array<Array<{ r: number; c: number }>> = Array.from(
       { length: SECTORS },
       () => [],
@@ -382,7 +358,7 @@ export const cycladicTheme: QRTheme = {
       const cand = buckets[s];
       if (!cand.length) continue;
       cand.sort((a, b) => rand2(a.r, a.c) - rand2(b.r, b.c));
-      const n = 1 + (rng() > 0.5 ? 1 : 0);
+      const n = 1 + (rng() > 0.35 ? 1 : 0);
       for (let a = 0; a < n && a < cand.length; a++)
         anchors.push(cand[Math.min(cand.length - 1, Math.floor(((a + 0.5) / n) * cand.length))]);
     }
@@ -407,7 +383,7 @@ export const cycladicTheme: QRTheme = {
           const key = r * 10000 + c;
           if (placed.has(key)) continue;
           const rnd = rand2(r, c);
-          const thresh = edge <= 1 ? -1 : edge === 2 ? 0.15 : 0.45; // dense centre → sparser edge
+          const thresh = edge <= 2 ? -1 : 0.3; // fill the grove densely
           if (rnd > thresh && trees < MAX_TREES) {
             placed.add(key);
             out.push(...makeTree(c, r, SAND_H - 0.15, rnd));
