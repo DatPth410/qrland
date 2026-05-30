@@ -15,13 +15,13 @@ import type { QRMatrix } from '../../qr/generate';
  * so error-correction capacity — and scannability — is unchanged across inputs.
  */
 
-// --- sizing (module/voxel units) ---
-const PAD_R = 7.5; // sand pad under the church (the ONLY overwritten zone)
-const PLAZA_R = 7; // round plaza radius
-const BODY_R = 5; // church body half-width
-const BODY_H = 6; // church body height
-const DRUM_R = 4; // dome drum radius
-const DOME_R = 5; // dome base radius
+// --- sizing (module/voxel units) — church ~2x bigger ---
+const PAD_R = 13; // sand pad under the church
+const PLAZA_R = 13; // round plaza covers the whole pad (so every cell is tiled = data)
+const BODY_R = 8; // church body half-width
+const BODY_H = 9; // church body height
+const DRUM_R = 8; // dome drum radius (matches the dome so the windowed drum shows)
+const DOME_R = 8; // dome base radius
 
 const SAND_H = 1.3;
 const SEA_H = 0.5;
@@ -41,6 +41,17 @@ const DOME_TOP = '#4a93cf';
 const DOME_DARK = '#255f92';
 const BLUE_TRIM = '#244f7a';
 const CROSS = '#d8c879';
+// QR-encoding tile shades for the church top: a LIGHT shade reads as a "dark
+// module" and a DARK shade reads as a "light module", so the building carries
+// real scannable data from straight down. Tuned to a cohesive Cyclades palette
+// (whitewash + Aegean blue + sand) so the light/dark pattern reads as intentional
+// tilework, not noise — while keeping a strong light/dark luminance gap to scan.
+const QR_WALL_LIGHT = '#f3efe5'; // warm whitewash
+const QR_WALL_DARK = '#235f87'; // Aegean blue (blue-shuttered look)
+const QR_DOME_LIGHT = '#bcd7e8'; // pale sky
+const QR_DOME_DARK = '#154a6c'; // deep dome blue
+const QR_PLAZA_LIGHT = '#ecdfbb'; // pale sand (matches the terrain)
+const QR_PLAZA_DARK = '#2c6488'; // sea blue
 const TRUNK = '#7b5a39';
 // tree foliage: the TOP voxel (what a top-down scanner sees) is a LIGHT green so
 // the cell still reads "light" like the sand module it covers — so a full-cell
@@ -93,7 +104,13 @@ function mulberry32(seed: number): () => number {
  * different building (dome height, campanile corner + height, window pattern,
  * steps) — all within the fixed pad footprint, so scannability is unchanged.
  */
-function buildChurch(ccol: number, crow: number, baseY: number, rng: () => number): PropVoxel[] {
+function buildChurch(
+  ccol: number,
+  crow: number,
+  baseY: number,
+  rng: () => number,
+  matrix: QRMatrix,
+): PropVoxel[] {
   const map = new Map<string, PropVoxel>();
   const extras: PropVoxel[] = [];
   const put = (x: number, z: number, layer: number, color: string, size = 1) => {
@@ -113,7 +130,7 @@ function buildChurch(ccol: number, crow: number, baseY: number, rng: () => numbe
     [-BODY_R, -BODY_R],
     [BODY_R, -BODY_R],
   ];
-  const [tx, tz] = corners[Math.floor(rng() * 4)]; // campanile corner
+  const [tx, tz] = corners[Math.floor(rng() * 2)]; // campanile on a FRONT corner
   const towerH = BODY_H + 2 + Math.floor(rng() * 4); // campanile height
   const wphase = Math.floor(rng() * 2); // window pattern offset
   const nSteps = 2 + Math.floor(rng() * 3); // entrance steps
@@ -136,12 +153,24 @@ function buildChurch(ccol: number, crow: number, baseY: number, rng: () => numbe
         put(x, z, l, onWall ? ((x + z) & 1 ? WHITE_SH : WHITE) : WHITE_DK);
       }
     }
-  for (let x = -BODY_R + 1 + wphase; x <= BODY_R - 1; x += 2) {
-    put(x, BODY_R, 4, BLUE_TRIM);
-    put(x, -BODY_R, 4, BLUE_TRIM);
-    put(BODY_R, x, 4, BLUE_TRIM);
-    put(-BODY_R, x, 4, BLUE_TRIM);
+  // façade detail — on the vertical faces only, so it never affects the
+  // top-down QR: two tiers of tall arched windows + a grand door
+  const windowAt = (x: number, z: number, base: number, h: number) => {
+    for (let l = base; l < base + h; l++) put(x, z, l, BLUE_TRIM);
+  };
+  for (let t = -BODY_R + 2 + wphase; t <= BODY_R - 2; t += 3) {
+    const spots: Array<[number, number]> = [
+      [t, BODY_R],
+      [t, -BODY_R],
+      [BODY_R, t],
+      [-BODY_R, t],
+    ];
+    for (const [x, z] of spots) {
+      if (!(x === 0 && z === BODY_R)) windowAt(x, z, 3, 3); // lower tier (leave the door slot)
+      windowAt(x, z, 7, 2); // clerestory tier
+    }
   }
+  windowAt(0, BODY_R, 1, 4); // grand arched door, front centre
 
   // front portico / colonnade
   const pz = BODY_R + 1;
@@ -151,16 +180,23 @@ function buildChurch(ccol: number, crow: number, baseY: number, rng: () => numbe
   }
   for (let x = -BODY_R; x <= BODY_R; x++) put(x, pz, 5, STONE);
 
-  // windowed drum
+  // windowed drum — tall arched windows around the cylinder under the dome
   disk(BODY_H + 2, DRUM_R, WHITE);
   disk(BODY_H + 3, DRUM_R, WHITE);
+  const d1 = DRUM_R - 2;
   for (const [x, z] of [
     [DRUM_R, 0],
     [-DRUM_R, 0],
     [0, DRUM_R],
     [0, -DRUM_R],
-  ])
+    [d1, d1],
+    [-d1, d1],
+    [d1, -d1],
+    [-d1, -d1],
+  ]) {
+    put(x, z, BODY_H + 2, BLUE_TRIM);
     put(x, z, BODY_H + 3, BLUE_TRIM);
+  }
 
   // rounded dome (seeded height)
   const domeBase = BODY_H + 4;
@@ -183,10 +219,12 @@ function buildChurch(ccol: number, crow: number, baseY: number, rng: () => numbe
     { col: ccol + 0.65, row: crow, y: baseY + topL + 1.1, size: 0.45, color: CROSS },
   );
 
-  // campanile at the seeded corner, with seeded height
-  for (let l = 1; l <= towerH; l++)
-    put(tx, tz, l, l === Math.round(towerH * 0.7) ? BLUE_TRIM : WHITE);
-  put(tx, tz, towerH + 1, DOME, 0.9);
+  // campanile (bell tower) — white shaft with two arched bell openings + cap
+  for (let l = 1; l <= towerH; l++) {
+    const bell = l === towerH - 1 || l === towerH - 3; // two stacked bell openings
+    put(tx, tz, l, bell ? BLUE_TRIM : WHITE);
+  }
+  put(tx, tz, towerH + 1, DOME, 0.9); // little domed cap (recolored to a QR tile)
   extras.push(
     { col: ccol + tx, row: crow + tz, y: baseY + towerH + 2, size: 0.32, color: CROSS },
     { col: ccol + tx, row: crow + tz, y: baseY + towerH + 2.7, size: 0.32, color: CROSS },
@@ -194,6 +232,27 @@ function buildChurch(ccol: number, crow: number, baseY: number, rng: () => numbe
 
   // entrance steps (seeded count) in front of the portico
   for (let s = 1; s <= nSteps; s++) put(0, pz + s, 0, shade(STONE, -0.03 * s));
+
+  // ENCODE THE QR on the church: recolor each cell-column's TOP voxel to a light
+  // or dark shade matching the real module below it (the church is dead-center,
+  // so there's almost no perspective skew — the tiles stay on their grid cells).
+  const top = new Map<string, { layer: number; key: string; x: number; z: number }>();
+  for (const key of map.keys()) {
+    const [x, z, layer] = key.split('|').map(Number);
+    const ck = `${x}|${z}`;
+    const cur = top.get(ck);
+    if (!cur || layer > cur.layer) top.set(ck, { layer, key, x, z });
+  }
+  for (const { key, x, z, layer } of top.values()) {
+    const v = map.get(key)!;
+    const gr = crow + z;
+    const gc = ccol + x;
+    const isDark = !!(matrix.cells[gr] && matrix.cells[gr][gc]); // dark module → light tile
+    const isDome = v.color === DOME || v.color === DOME_TOP || v.color === DOME_DARK;
+    if (isDome) v.color = isDark ? QR_DOME_LIGHT : QR_DOME_DARK;
+    else if (layer <= 1) v.color = isDark ? QR_PLAZA_LIGHT : QR_PLAZA_DARK; // plaza floor
+    else v.color = isDark ? QR_WALL_LIGHT : QR_WALL_DARK;
+  }
 
   return [...map.values(), ...extras];
 }
@@ -209,34 +268,42 @@ function makeTree(col: number, row: number, gy: number, rnd: number): PropVoxel[
   const dg = LEAF_DARK[Math.floor(rnd * 601) % LEAF_DARK.length]; // dark body (depth)
   const t = TRUNK;
   const W = 0.92; // canopy nearly fills the cell, so the top is a clean QR "light" cell
-  if (rnd < 0.2) {
-    // bush (one full light-green cell)
-    return [{ col, row, y: gy, size: W, color: lg }];
-  }
-  if (rnd < 0.5) {
-    // round tree (~1.7 tall)
+  // taller, fuller trees: a trunk + a stack of dark-green body voxels with a
+  // light-green crown on top (only the crown matters for the top-down read)
+  if (rnd < 0.18) {
+    // small tree (~1.6)
     return [
       { col, row, y: gy, size: 0.42, color: t },
-      { col, row, y: gy + 0.45, size: W, color: dg },
-      { col, row, y: gy + 1.3, size: W, color: lg },
+      { col, row, y: gy + 0.5, size: W, color: lg },
     ];
   }
-  if (rnd < 0.78) {
-    // tall tree (~2.5 tall)
+  if (rnd < 0.48) {
+    // round tree (~2.7)
     return [
-      { col, row, y: gy, size: 0.42, color: t },
-      { col, row, y: gy + 0.45, size: W, color: dg },
-      { col, row, y: gy + 1.3, size: W, color: dg },
-      { col, row, y: gy + 2.15, size: W, color: lg },
+      { col, row, y: gy, size: 0.46, color: t },
+      { col, row, y: gy + 0.55, size: W, color: dg },
+      { col, row, y: gy + 1.4, size: W, color: dg },
+      { col, row, y: gy + 2.25, size: W, color: lg },
     ];
   }
-  // cypress (~3.4 tall)
+  if (rnd < 0.76) {
+    // tall tree (~3.6)
+    return [
+      { col, row, y: gy, size: 0.46, color: t },
+      { col, row, y: gy + 0.55, size: W, color: dg },
+      { col, row, y: gy + 1.4, size: W, color: dg },
+      { col, row, y: gy + 2.25, size: W, color: dg },
+      { col, row, y: gy + 3.1, size: W, color: lg },
+    ];
+  }
+  // cypress (~4.6 tall)
   return [
-    { col, row, y: gy, size: 0.36, color: t },
-    { col, row, y: gy + 0.45, size: 0.86, color: dg },
-    { col, row, y: gy + 1.3, size: 0.86, color: dg },
-    { col, row, y: gy + 2.15, size: 0.86, color: dg },
-    { col, row, y: gy + 3.0, size: 0.84, color: lg },
+    { col, row, y: gy, size: 0.4, color: t },
+    { col, row, y: gy + 0.55, size: 0.86, color: dg },
+    { col, row, y: gy + 1.4, size: 0.86, color: dg },
+    { col, row, y: gy + 2.25, size: 0.86, color: dg },
+    { col, row, y: gy + 3.1, size: 0.86, color: dg },
+    { col, row, y: gy + 3.95, size: 0.82, color: lg },
   ];
 }
 
@@ -285,13 +352,13 @@ export const cycladicTheme: QRTheme = {
         });
       }
 
-    // the seeded church
-    out.push(...buildChurch(ccol, crow, SAND_H, rng));
+    // the seeded church — its top surfaces encode the QR (light/dark tiles)
+    out.push(...buildChurch(ccol, crow, SAND_H, rng, matrix));
 
-    // trees on REAL sand modules, distributed AROUND the church: bucket
-    // candidate sandbars into angular sectors so every side gets some (and they
-    // still vary per URL because the candidate set is the data)
-    const SECTORS = 26;
+    // trees grouped into CLUMPS (small groves), not scattered singles: pick a
+    // few anchor cells spread around the church, then grow a tight grove of
+    // trees on the sand right around each anchor (open sand between clumps)
+    const SECTORS = 12;
     const buckets: Array<Array<{ r: number; c: number }>> = Array.from(
       { length: SECTORS },
       () => [],
@@ -300,7 +367,7 @@ export const cycladicTheme: QRTheme = {
       for (let c = 0; c < matrix.size; c++) {
         if (!matrix.cells[r][c]) continue; // real sand only
         const rMod = rOf(r, c);
-        if (rMod < PAD_R + 0.5 || rMod > PAD_R + 14) continue; // band around the church
+        if (rMod < PAD_R + 1 || rMod > PAD_R + 12) continue; // band around the church
         const sec =
           Math.floor(
             ((Math.atan2(r - qz - center, c - qz - center) + Math.PI) / (2 * Math.PI)) * SECTORS,
@@ -308,18 +375,43 @@ export const cycladicTheme: QRTheme = {
         buckets[sec].push({ r, c });
       }
 
-    let trees = 0;
-    const MAX_TREES = 175;
+    // 1-2 clump anchors per sector
+    const anchors: Array<{ r: number; c: number }> = [];
     for (let s = 0; s < SECTORS; s++) {
       const cand = buckets[s];
       if (!cand.length) continue;
-      cand.sort((a, b) => rand2(a.r, a.c) - rand2(b.r, b.c)); // deterministic, data-dependent
-      const take = Math.min(cand.length, 5 + Math.floor(rng() * 3)); // 5-7 per sector
-      for (let i = 0; i < take && trees < MAX_TREES; i++) {
-        out.push(...makeTree(cand[i].c, cand[i].r, SAND_H - 0.15, rand2(cand[i].c, cand[i].r)));
-        trees++;
-      }
+      cand.sort((a, b) => rand2(a.r, a.c) - rand2(b.r, b.c));
+      const n = 1 + (rng() > 0.5 ? 1 : 0);
+      for (let a = 0; a < n && a < cand.length; a++)
+        anchors.push(cand[Math.min(cand.length - 1, Math.floor(((a + 0.5) / n) * cand.length))]);
     }
+
+    // grow a diamond-shaped grove on the sand around each anchor (dense centre,
+    // thinning at the edges) — every tree sits on a real sand module, light crown
+    const placed = new Set<number>();
+    let trees = 0;
+    const MAX_TREES = 190;
+    const CR = 3; // bigger, thicker groves
+    for (const anc of anchors)
+      for (let dr = -CR; dr <= CR; dr++)
+        for (let dc = -CR; dc <= CR; dc++) {
+          const edge = Math.abs(dr) + Math.abs(dc);
+          if (edge > CR) continue; // diamond clump
+          const r = anc.r + dr;
+          const c = anc.c + dc;
+          if (r < 0 || r >= matrix.size || c < 0 || c >= matrix.size) continue;
+          if (!matrix.cells[r][c]) continue; // sand only
+          if (rOf(r, c) <= PAD_R) continue; // off the church
+          const key = r * 10000 + c;
+          if (placed.has(key)) continue;
+          const rnd = rand2(r, c);
+          const thresh = edge <= 1 ? -1 : edge === 2 ? 0.15 : 0.45; // dense centre → sparser edge
+          if (rnd > thresh && trees < MAX_TREES) {
+            placed.add(key);
+            out.push(...makeTree(c, r, SAND_H - 0.15, rnd));
+            trees++;
+          }
+        }
 
     // a few sea rocks for detail
     let rocks = 0;

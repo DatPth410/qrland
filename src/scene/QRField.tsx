@@ -5,7 +5,7 @@ import { useView } from '../state/useView';
 import type { QRMatrix } from '../qr/generate';
 import type { ColumnSpec, PropVoxel, QRTheme } from './theme';
 
-const GAP_3D = 0.06; // inter-voxel gap fraction in scene view (closes for scan)
+const GAP_3D = 0; // no inter-voxel gap — flush voxels (the seam "grid" looked noisy)
 const SCAN_LAMBDA = 5; // gap-close damping speed
 
 /** deterministic pseudo-random in [0,1) per module */
