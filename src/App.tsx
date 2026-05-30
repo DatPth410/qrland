@@ -14,7 +14,7 @@ const theme = cycladicTheme;
 // ECC H + a forced floor version: enough modules and error-correction blocks
 // that the central island/church (a contiguous overwrite of the center) stays
 // recoverable. Longer payloads grow the version (finer islands), never below 8.
-const QR_OPTS = { errorCorrectionLevel: 'H', quietZone: 4, minVersion: 8 } as const;
+const QR_OPTS = { errorCorrectionLevel: 'H', quietZone: 4, minVersion: 11 } as const;
 
 export default function App() {
   const [url, setUrl] = useState(DEFAULT_URL);

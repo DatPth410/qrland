@@ -33,9 +33,11 @@ function Lighting({
     const target = view === 'scan' ? 1 : 0;
     k.current = THREE.MathUtils.damp(k.current, target, 5, delta);
     const t = k.current;
-    if (dir.current) dir.current.intensity = THREE.MathUtils.lerp(1.3, 0.12, t);
-    if (amb.current) amb.current.intensity = THREE.MathUtils.lerp(ambient, 0.82, t);
-    if (hemi.current) hemi.current.intensity = THREE.MathUtils.lerp(0.35, 0.05, t);
+    // scan view → fully shadowless (pure ambient) so tall trees can't cast
+    // shadows onto neighbouring sand modules and flip QR bits
+    if (dir.current) dir.current.intensity = THREE.MathUtils.lerp(1.3, 0.0, t);
+    if (amb.current) amb.current.intensity = THREE.MathUtils.lerp(ambient, 0.98, t);
+    if (hemi.current) hemi.current.intensity = THREE.MathUtils.lerp(0.35, 0.04, t);
   });
 
   return (

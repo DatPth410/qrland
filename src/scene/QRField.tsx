@@ -81,7 +81,8 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
   const half = matrix.size / 2 - 0.5;
   const tmp = useMemo(() => new THREE.Object3D(), []);
 
-  const writeCells = (mesh: THREE.InstancedMesh, cells: Cell[], footprint: number) => {
+  const writeCells = (mesh: THREE.InstancedMesh | null, cells: Cell[], footprint: number) => {
+    if (!mesh || mesh.count < cells.length) return; // mesh may be remounting (count change)
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
       tmp.position.set(cell.c - half, cell.h / 2, cell.r - half);
@@ -92,14 +93,17 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     mesh.instanceMatrix.needsUpdate = true;
   };
 
-  // colors + prop transforms are constant — set once
+  // colors + prop transforms are constant — set once (after any keyed remount)
   useLayoutEffect(() => {
-    darkCells.forEach((cell, i) => darkRef.current.setColorAt(i, cell.color));
-    lightCells.forEach((cell, i) => lightRef.current.setColorAt(i, cell.color));
-    if (darkRef.current.instanceColor) darkRef.current.instanceColor.needsUpdate = true;
-    if (lightRef.current.instanceColor) lightRef.current.instanceColor.needsUpdate = true;
+    const dark = darkRef.current;
+    const light = lightRef.current;
+    if (!dark || !light || dark.count < darkCells.length || light.count < lightCells.length) return;
+    darkCells.forEach((cell, i) => dark.setColorAt(i, cell.color));
+    lightCells.forEach((cell, i) => light.setColorAt(i, cell.color));
+    if (dark.instanceColor) dark.instanceColor.needsUpdate = true;
+    if (light.instanceColor) light.instanceColor.needsUpdate = true;
 
-    if (propRef.current) {
+    if (propRef.current && propRef.current.count >= props.length) {
       const col = new THREE.Color();
       props.forEach((p, i) => {
         tmp.position.set(p.col - half, p.y + p.size / 2, p.row - half);
@@ -128,13 +132,17 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
 
   return (
     <group>
+      {/* key by instance count so a count change (new URL) remounts the mesh
+          cleanly instead of writing to a stale, wrong-sized instance buffer */}
       <instancedMesh
+        key={`light-${lightCells.length}`}
         ref={lightRef}
         args={[geo, lightMat, lightCells.length]}
         receiveShadow
         frustumCulled={false}
       />
       <instancedMesh
+        key={`dark-${darkCells.length}`}
         ref={darkRef}
         args={[geo, darkMat, darkCells.length]}
         castShadow
@@ -143,6 +151,7 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
       />
       {props.length > 0 && (
         <instancedMesh
+          key={`prop-${props.length}`}
           ref={propRef}
           args={[geo, propMat, props.length]}
           castShadow
