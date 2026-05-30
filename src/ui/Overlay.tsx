@@ -1,8 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useView } from '../state/useView';
 import { verifyCanvas } from '../qr/verify';
 
-export function Overlay({ text, themeName }: { text: string; themeName: string }) {
+interface OverlayProps {
+  text: string;
+  themeName: string;
+  onApplyUrl: (url: string) => void;
+  error: string | null;
+}
+
+export function Overlay({ text, themeName, onApplyUrl, error }: OverlayProps) {
   const view = useView((s) => s.view);
   const toggle = useView((s) => s.toggle);
   const setView = useView((s) => s.setView);
@@ -10,8 +17,15 @@ export function Overlay({ text, themeName }: { text: string; themeName: string }
   const setScan = useView((s) => s.setScan);
   const [checking, setChecking] = useState(false);
 
-  // flip to top-down scan view, then poll-decode the canvas until it reads (the
-  // camera tilt + lighting flatten take ~1.5s, and settle time varies)
+  // editable payload — re-renders the island a short beat after you stop typing
+  const [draft, setDraft] = useState(text);
+  useEffect(() => {
+    if (draft.trim() === text) return;
+    const id = window.setTimeout(() => onApplyUrl(draft), 450);
+    return () => window.clearTimeout(id);
+  }, [draft, text, onApplyUrl]);
+
+  // flip to top-down scan view, then poll-decode the canvas until it reads
   const checkScan = () => {
     setChecking(true);
     setView('scan');
@@ -43,7 +57,21 @@ export function Overlay({ text, themeName }: { text: string; themeName: string }
     <div className="overlay">
       <div className="panel title">
         <h1>QRLand · {themeName}</h1>
-        <p>{text}</p>
+        <label className="url-field">
+          <span className="url-label">Encodes</span>
+          <input
+            className={`url-input ${error ? 'invalid' : ''}`}
+            value={draft}
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="https://your-link.com"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onApplyUrl(draft);
+            }}
+          />
+          {error && <span className="url-error">{error}</span>}
+        </label>
       </div>
 
       <div className="status panel" style={{ padding: '8px 12px' }}>

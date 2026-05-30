@@ -20,6 +20,10 @@ export interface GenerateOptions {
   errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H';
   /** force a QR version (1-40) for a stable layout; omit to auto-fit */
   version?: number;
+  /** floor the auto-fit version (so short payloads still get enough modules
+   *  for the centerpiece to stay within error-correction); ignored if `version`
+   *  is set */
+  minVersion?: number;
 }
 
 /**
@@ -29,9 +33,12 @@ export interface GenerateOptions {
  * high-contrast, scannable QR.
  */
 export function generateQR(text: string, opts: GenerateOptions = {}): QRMatrix {
-  const { quietZone = 4, errorCorrectionLevel = 'M', version } = opts;
+  const { quietZone = 4, errorCorrectionLevel = 'M', version, minVersion } = opts;
 
-  const qr = QRCode.create(text, { errorCorrectionLevel, version });
+  let qr = QRCode.create(text, { errorCorrectionLevel, version });
+  if (version === undefined && minVersion !== undefined && qr.version < minVersion) {
+    qr = QRCode.create(text, { errorCorrectionLevel, version: minVersion });
+  }
   const n = qr.modules.size;
   const data = qr.modules.data;
   const size = n + quietZone * 2;

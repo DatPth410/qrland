@@ -26,10 +26,11 @@ const SAND_H = 1.3;
 const SEA_H = 0.5;
 const SAND_VAR = 0.06;
 
-// --- palette ---
-const SAND = '#e7d3a0';
-const SAND_ISLAND = '#ecdcad';
-const SEA = '#16596c';
+// --- palette (high contrast so the top-down QR scans on real phones:
+//     bright sand "ink" on near-black sea "paper") ---
+const SAND = '#ecdfbb';
+const SAND_ISLAND = '#f1e7cd';
+const SEA = '#0f3a48';
 const STONE = '#e8e2d2';
 const WHITE = '#eef0ec';
 const WHITE_SH = '#dde0d8';
@@ -183,7 +184,7 @@ export const cycladicTheme: QRTheme = {
   background: '#e3e9ec',
   background2: '#acc0c9',
   fog: '#c2d0d6',
-  groundColor: '#0e4555',
+  groundColor: '#0a2e3a',
   lightColor: '#e7d3a0',
   darkColor: '#16596c',
   lightSceneColor: SEA,
