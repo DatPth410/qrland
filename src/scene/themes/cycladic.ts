@@ -159,9 +159,18 @@ function buildChurch(
       }
     }
   // façade detail — on the vertical faces only, so it never affects the
-  // top-down QR: two tiers of tall arched windows + a grand door
+  // top-down QR: two tiers of tall arched windows + a grand door.
+  // A window/door is a real OPENING: we hollow out the wall cell (empty recess)
+  // and set a blue pane one voxel further IN, so it reads with depth instead of
+  // a blue panel flush on the façade. The pane lands on an interior column whose
+  // top voxel is the roof, so the top-down QR is unchanged.
   const windowAt = (x: number, z: number, base: number, h: number) => {
-    for (let l = base; l < base + h; l++) put(x, z, l, BLUE_TRIM);
+    const ix = x === BODY_R ? -1 : x === -BODY_R ? 1 : 0; // step toward the interior
+    const iz = z === BODY_R ? -1 : z === -BODY_R ? 1 : 0;
+    for (let l = base; l < base + h; l++) {
+      map.delete(`${x}|${z}|${l}`); // open the hole in the wall face
+      put(x + ix, z + iz, l, BLUE_TRIM); // recessed blue pane behind it
+    }
   };
   for (let t = -BODY_R + 2 + wphase; t <= BODY_R - 2; t += 3) {
     const spots: Array<[number, number]> = [
