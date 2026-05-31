@@ -30,7 +30,7 @@ import type { QRMatrix } from '../../qr/generate';
 const DAIS_R = 14; // raised stone terrace the pavilion stands on (encodes its lip)
 const BR = 7; // upper pavilion (red body) half-width
 const PR = 6; // the four pillars sit at (±PR, ±PR), each a 3×3 stone shaft
-const DECK_R = 8; // balcony deck half-width (overhangs the pillars by one)
+const DECK_R = 9; // balcony deck half-width — a cell wider than the body for a railed walkway
 // The roof is a solid tiled cap EXCEPT a small patch at its crown that keeps
 // encoding the QR. That patch preserves the centre ALIGNMENT pattern — a
 // structural function pattern that error correction does NOT protect (like the
@@ -57,22 +57,23 @@ const PARK_DARK = '#34402a'; // shaded park earth & moss (clearly "dark")
 // ROAD (the cross through the temple) — gray stone
 const ROAD_LIGHT = '#c6c6c0'; // pale gray paving (light)
 const ROAD_DARK = '#4a4a46'; // dark gray joints (clearly "dark")
-const STONE_PALE = '#e7e0cd'; // whitewashed pillar / terrace stone
-const STONE_SH = '#d6cdb6';
-const STONE_DK = '#c7bda3';
-const RED = '#9e342b'; // lacquer-red pavilion wood
-const RED_SH = '#8d2f26';
-const GOLD = '#e3b24c'; // gilded trim, window sun-rays, finial
+const STONE_PALE = '#8f8e87'; // massive NEUTRAL-GRAY stone pillars / terrace (per the reference)
+const STONE_SH = '#797872';
+const STONE_DK = '#636259';
+const RED = '#9c382e'; // deep oxblood lacquer-red pavilion wood (richer, less orange)
+const RED_SH = '#84322a';
+const GOLD = '#e3b24c'; // gilded trim, finial
 const GOLD_DK = '#c2912f';
-const TILE = '#6a4a3b'; // roof tile (warm dark terracotta)
-const TILE_DK = '#553a2e';
-const TILE_RIDGE = '#86392c'; // red-brown roof ridge
+const TILE = '#45302a'; // warm dark-brown roof tile — dark, but warm so it fits the red body
+const TILE_DK = '#33231d'; // darker warm edge between tiers
+const TILE_RIDGE = '#988f81'; // warm stone for the upturned corner sweeps (đầu đao)
+const WINDOW_STONE = '#afada3'; // gray-stone frame ring around the open round window
 // QR-encoding tile shades for the terrace top: a LIGHT shade reads as a "dark
 // module" and a DARK shade reads as a "light module", so the stonework carries
 // real scannable data from straight down. Tuned to the courtyard palette (pale
 // flagstone + laterite) so the light/dark pattern reads as deliberate paving.
-const QR_FLOOR_LIGHT = '#e2d7b8'; // pale stone (reads "dark module")
-const QR_FLOOR_DARK = '#5e3a22'; // laterite (reads "light module")
+const QR_FLOOR_LIGHT = '#c8c6bc'; // pale GRAY stone terrace (reads "dark module")
+const QR_FLOOR_DARK = '#55544d'; // dark GRAY stone (reads "light module")
 const TRUNK = '#6f4a2e';
 // tree foliage: the TOP voxel (what a top-down scanner sees) is a LIGHT green so
 // the cell still reads "light" like the flagstone module it covers — a full-cell
@@ -217,8 +218,21 @@ function buildPavilion(
   // raised stone terrace (two tiers) — the lip past the eaves encodes the QR
   plate(0, DAIS_R, STONE_PALE, STONE_SH);
   plate(1, DAIS_R - 1, shade(STONE_PALE, 0.02));
-  // a low moon-stair down the FRONT of the terrace, toward the lake (+row)
-  for (let s = 1; s <= 3; s++) put(0, DAIS_R - 1 + s, 0, shade(STONE_PALE, -0.03 * s));
+  // wide stone entrance steps down each of the four road arms (the gate's approach)
+  for (const [dirx, dirz] of [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ]) {
+    const tx = dirz; // across the arm
+    const tz = dirx;
+    for (let w = -ROAD_HW; w <= ROAD_HW; w++) {
+      put(dirx * (DAIS_R - 1) + tx * w, dirz * (DAIS_R - 1) + tz * w, 1, STONE_PALE); // top step (terrace level)
+      put(dirx * DAIS_R + tx * w, dirz * DAIS_R + tz * w, 0, shade(STONE_PALE, -0.04)); // middle step
+      put(dirx * (DAIS_R + 1) + tx * w, dirz * (DAIS_R + 1) + tz * w, 0, shade(STONE_PALE, -0.08)); // lower step into the road
+    }
+  }
 
   // four whitewashed brick pillars (3×3 shafts) carrying the open lower level
   for (const [px, pz] of [
@@ -248,7 +262,8 @@ function buildPavilion(
       }
   }
 
-  // balcony deck — a red lacquer floor slab on the pillars, with a low railing
+  // balcony deck — a red lacquer floor slab on the pillars, a cell wider than the body
+  // so there's a walkway, ringed by a 2-tall railing: red balusters + a gilded top rail
   plate(bodyBase - 1, DECK_R, RED_SH);
   for (let t = -DECK_R; t <= DECK_R; t++)
     for (const [bx, bz] of [
@@ -257,7 +272,8 @@ function buildPavilion(
       [DECK_R, t],
       [-DECK_R, t],
     ]) {
-      put(bx, bz, bodyBase, (t & 1) === 0 ? RED : GOLD_DK); // posts + gilt rail caps
+      if ((t & 1) === 0 || Math.abs(t) === DECK_R) put(bx, bz, bodyBase, RED); // red balusters with OPEN gaps between
+      put(bx, bz, bodyBase + 1, TILE); // continuous red-brown wood top rail
     }
 
   // upper pavilion — red lacquered walls (shelled), open square box
@@ -272,36 +288,27 @@ function buildPavilion(
   // gilded sills top + bottom of the body
   plate(bodyBase, BR, RED, GOLD_DK);
 
-  // the four signature STAR windows: a round opening on each wall, dark-red recess
-  // behind, with gilded sun-ray slats radiating from the centre (the "constellation
-  // of literature"). On vertical faces only, below the eaves → never a column top.
+  // the four signature round windows ("constellation of literature") — a stone SUN:
+  // radiating ray-slats + an outer frame ring, with OPEN gaps between the rays you can
+  // see THROUGH into the pavilion. On vertical faces only, below the eaves → never a
+  // column top, so it never affects the top-down QR.
   const cy = bodyBase + Math.round(bodyH / 2); // window centre layer
-  const RECESS = '#241612'; // deep lacquer shadow inside the window
   const roundWindow = (nx: number, nz: number) => {
     const tx = nz; // tangent along the wall
     const tz = -nx;
     for (let a = -3; a <= 3; a++)
       for (let dy = -3; dy <= 3; dy++) {
         const r2 = a * a + dy * dy;
-        if (r2 > 10) continue; // keep the window inside a tidy disc (radius ~3)
+        if (r2 > 10) continue; // keep the sun inside a tidy disc (radius ~3)
         const x = nx * BR + tx * a;
         const z = nz * BR + tz * a;
         const ly = cy + dy;
-        if (r2 <= 4) {
-          // carve the round opening; set a dark recess one voxel in, then float a
-          // gilded four-point star (centre + cardinal sun-rays) proud of it
-          map.delete(`${x}|${z}|${ly}`);
-          put(x - nx, z - nz, ly, RECESS);
-          if (a === 0 || dy === 0)
-            extras.push({
-              col: ccol + x - nx * 0.4,
-              row: crow + z - nz * 0.4,
-              y: baseY + ly,
-              size: r2 === 0 ? 0.6 : 0.42,
-              color: GOLD,
-            });
+        const ray = a === 0 || dy === 0 || Math.abs(a) === Math.abs(dy); // 8 radiating sun-rays
+        const rim = r2 >= 8; // outer frame ring
+        if (ray || rim) {
+          put(x, z, ly, WINDOW_STONE); // a sun-ray slat / the frame
         } else {
-          put(x, z, ly, GOLD_DK); // gilded round frame hugging the opening
+          map.delete(`${x}|${z}|${ly}`); // OPEN gap between the rays — see through
         }
       }
   };
@@ -313,31 +320,49 @@ function buildPavilion(
   // two-tiered upturned roof (chồng diêm) — a solid tiled cap over the centre.
   // lower eave (the dramatic wide sweep), a short red band, then the upper roof
   // tapering to a peak. Each tier is a stack of square tile plates.
+  // dark charcoal tiles with light GRAY-STONE ridge edges (TILE_RIDGE on each rim),
+  // matching the reference's near-black roof lined with pale stone ridges.
   const r1 = bodyTop + 1; // lower-eave base layer
-  plate(r1, EAVE_R, TILE, TILE_DK); // wide lower eave (the dramatic sweep)
-  plate(r1 + 1, EAVE_R - 2, TILE);
+  plate(r1, EAVE_R, TILE, TILE_DK); // wide lower eave — dark tiles, dark edge (mostly dark roof)
+  plate(r1 + 1, EAVE_R - 2, TILE, TILE_DK);
   plate(r1 + 2, EAVE_R - 4, RED, GOLD_DK); // narrow red neck — the gap between the two roofs
   const r2 = r1 + 3; // upper-roof base layer
   const peak = 3 + pitch; // three or four tile courses up to the peak (taller roof)
   for (let i = 0; i <= peak; i++) {
     const hw = Math.max(1, EAVE_R - 1 - i * 2); // upper eave (8) tapering to the peak
-    plate(r2 + i, hw, i === 0 ? TILE_RIDGE : TILE, TILE_DK);
+    plate(r2 + i, hw, TILE, TILE_DK);
   }
   const topL = r2 + peak;
 
-  // upturned corner finials (đầu đao) at the four lower-eave corners — little gold
-  // curls that sweep up, the signature of a Vietnamese temple roof.
-  for (const [cx, cz] of [
-    [EAVE_R, EAVE_R],
-    [EAVE_R, -EAVE_R],
-    [-EAVE_R, EAVE_R],
-    [-EAVE_R, -EAVE_R],
+  // upturned corner ornaments (đầu đao) — LAYERED dragon sweeps at the corners: a big
+  // gray-stone curl on the lower eave AND a second smaller curl on the upper roof, so
+  // each corner stacks two tiers like the reference's dragons. A few EC-absorbable
+  // cells may sit just past the eave; that's fine (4 corners × a couple cells).
+  for (const [sx, sz] of [
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
   ]) {
-    // a little curl sweeping UP at each lower-eave corner — kept on the eave cell
-    // (inside the roof footprint) so it never pokes out into the data ring
+    const lx = sx * EAVE_R;
+    const lz = sz * EAVE_R;
     extras.push(
-      { col: ccol + cx, row: crow + cz, y: baseY + r1 + 1.1, size: 0.6, color: TILE_RIDGE },
-      { col: ccol + cx, row: crow + cz, y: baseY + r1 + 1.8, size: 0.42, color: GOLD },
+      // lower-eave dragon — base, rising tiers, a long outward curl, gilded tip
+      { col: ccol + lx, row: crow + lz, y: baseY + r1 + 0.8, size: 0.9, color: TILE_RIDGE },
+      { col: ccol + lx, row: crow + lz, y: baseY + r1 + 1.7, size: 0.72, color: TILE_RIDGE },
+      { col: ccol + lx + sx * 0.5, row: crow + lz + sz * 0.5, y: baseY + r1 + 1.4, size: 0.5, color: TILE_RIDGE }, // lower curl (body)
+      { col: ccol + lx + sx * 0.5, row: crow + lz + sz * 0.5, y: baseY + r1 + 2.5, size: 0.6, color: TILE_RIDGE },
+      { col: ccol + lx + sx * 1.0, row: crow + lz + sz * 1.0, y: baseY + r1 + 3.2, size: 0.5, color: TILE_RIDGE },
+      { col: ccol + lx + sx * 1.5, row: crow + lz + sz * 1.5, y: baseY + r1 + 3.5, size: 0.42, color: TILE_RIDGE }, // long flare
+      { col: ccol + lx + sx * 1.8, row: crow + lz + sz * 1.8, y: baseY + r1 + 3.1, size: 0.34, color: GOLD_DK }, // gilded tip
+    );
+    const ux = sx * (EAVE_R - 1);
+    const uz = sz * (EAVE_R - 1);
+    extras.push(
+      // upper-roof dragon — a second, smaller curl stacked above
+      { col: ccol + ux, row: crow + uz, y: baseY + r2 + 0.6, size: 0.58, color: TILE_RIDGE },
+      { col: ccol + ux + sx * 0.5, row: crow + uz + sz * 0.5, y: baseY + r2 + 1.3, size: 0.46, color: TILE_RIDGE },
+      { col: ccol + ux + sx * 0.9, row: crow + uz + sz * 0.9, y: baseY + r2 + 1.0, size: 0.34, color: GOLD_DK }, // gilded tip
     );
   }
   // gilded finial crowning the roof (a stacked jewel, like the real bầu rượu),
