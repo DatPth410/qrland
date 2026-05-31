@@ -27,32 +27,36 @@ import type { QRMatrix } from '../../qr/generate';
  */
 
 // --- sizing (module/voxel units): biggest pavilion that still reliably scans ---
-const INNER_R = 18; // pale courtyard plateau around the pavilion (flat, calm, no pond, no trees)
-const DAIS_R = 11; // raised stone terrace the pavilion stands on (encodes its lip)
-const BR = 5; // upper pavilion (red body) half-width
-const PR = 4; // the four pillars sit at (±PR, ±PR), each a 3×3 stone shaft
-const DECK_R = 6; // balcony deck half-width (overhangs the pillars by one)
+const DAIS_R = 14; // raised stone terrace the pavilion stands on (encodes its lip)
+const BR = 7; // upper pavilion (red body) half-width
+const PR = 6; // the four pillars sit at (±PR, ±PR), each a 3×3 stone shaft
+const DECK_R = 8; // balcony deck half-width (overhangs the pillars by one)
 // The roof is a solid tiled cap EXCEPT a small patch at its crown that keeps
 // encoding the QR. That patch preserves the centre ALIGNMENT pattern — a
 // structural function pattern that error correction does NOT protect (like the
 // corner finders), so it must survive for the grid to lock. EAVE_R is the widest
 // eave (the square the roof "loses" to solid tile from straight down); the off-
 // centre alignment patterns of this version sit well outside it.
-const EAVE_R = 7; // widest roof eave half-width (its corners stay within the proven centre radius)
-const ROOF_KEEP_R = 3; // Chebyshev keep-radius around dead centre → a 7×7 crown patch
+const EAVE_R = 9; // widest roof eave half-width (kept modest — this square cap is the QR's central dead zone)
+const ROOF_KEEP_R = 4; // Chebyshev keep-radius around dead centre → a 9×9 crown patch (re-encodes the centre)
 
-const STONE_H = 1.3; // raised flagstone height (the light "ink")
-const POND_H = 0.5; // jade pond height (the dark "paper")
-const STONE_VAR = 0.06;
+// --- grounds layout: a symmetric cross of gray ROADS through the temple (one each
+//     way) divides the grounds into four identical PARK quadrants. ---
+const ROAD_HW = 3; // half-width of each road arm (→ 7 wide)
 
-// --- palette: bright pale flagstone vs a clearly-dark jade pond. Stone stays the
-//     light "ink"; water + laterite joints are the dark "paper". ---
-const STONE = '#d8ccab'; // pale flagstone (clearly "light")
-const POND = '#1f4a44'; // jade lotus-pond water (clearly "dark")
-// courtyard near the pavilion: pale flagstone + dark laterite brick (the Temple's
-// real wall material) — a clean two-tone, no pond/green here so the shrine reads.
-const GROUND_LIGHT = '#ddd1b0'; // pale flagstone
-const GROUND_DARK = '#6e4326'; // laterite brick-earth (clearly "dark")
+const STONE_H = 1.3; // raised ground height (the light "ink")
+const POND_H = 0.5; // low-tile height (the light-module scene fallback)
+
+// --- palette. The grounds are a wooded PARK cut by a symmetric cross of gray ROADS.
+//     Every zone obeys the scan rule — dark module → a LIGHT material, light → a DARK
+//     material — so polarity (scannability) is identical; only the materials change.
+const POND = '#1f4a44'; // light-module scene fallback (theme.light() handles it at runtime)
+// PARK (the four quadrants): sunlit lawn over shaded earth, where the trees stand
+const PARK_LIGHT = '#b3c987'; // sunlit grass / foliage (light)
+const PARK_DARK = '#34402a'; // shaded park earth & moss (clearly "dark")
+// ROAD (the cross through the temple) — gray stone
+const ROAD_LIGHT = '#c6c6c0'; // pale gray paving (light)
+const ROAD_DARK = '#4a4a46'; // dark gray joints (clearly "dark")
 const STONE_PALE = '#e7e0cd'; // whitewashed pillar / terrace stone
 const STONE_SH = '#d6cdb6';
 const STONE_DK = '#c7bda3';
@@ -76,7 +80,6 @@ const TRUNK = '#6f4a2e';
 // depth in the isometric view.
 const LEAF_LIGHT = ['#a9c47e', '#b6cf86', '#9eb972'];
 const LEAF_DARK = ['#5c7b3e', '#6b8a4b', '#527036', '#496a31'];
-const PAD = '#2f5d3e'; // lotus pad (dark green, reads "dark" so it never flips a pond cell)
 // crisp corner locator squares become tiered STELE GARDENS that still scan (painted
 // in column()/light() below): the finder's two light parts become a light pale-stone
 // stele bed (inner square) + clipped topiary (outer ring); the gap+separator become a
@@ -134,6 +137,16 @@ function finderRing(qRow: number, qCol: number, modules: number): number {
   for (const [cr, cc] of centres)
     best = Math.min(best, Math.max(Math.abs(qRow - cr), Math.abs(qCol - cc)));
   return best;
+}
+
+/** Which ground zone a cell falls in. A symmetric layout: a cross of gray ROADS runs
+ *  through the temple (one up/down, one left/right — the left/right arm is where the
+ *  brick wall used to be), dividing the grounds into four identical PARK quadrants. */
+type Zone = 'road' | 'park';
+function zoneOf(qCol: number, qRow: number, modules: number): Zone {
+  const center = (modules - 1) / 2;
+  if (Math.abs(qCol - center) <= ROAD_HW || Math.abs(qRow - center) <= ROAD_HW) return 'road';
+  return 'park';
 }
 
 /** rotate an integer (x,z) offset by k×90° (stays axis-aligned) so the courtyard
@@ -196,20 +209,16 @@ function buildPavilion(
   };
 
   // --- seeded variations (footprint stays inside the courtyard) ---
-  const bodyH = 4 + Math.floor(rng() * 2); // red body height: 4 or 5
-  const bodyBase = 7;
+  const bodyH = 7 + Math.floor(rng() * 2); // red body height: 7 or 8 (taller pavilion)
+  const bodyBase = 11; // top of the tall open lower level (pillars rise to here)
   const bodyTop = bodyBase + bodyH; // top of the red walls
-  const wfacing = Math.floor(rng() * 4); // which wall faces "front" (window phase)
   const pitch = rng() > 0.5 ? 1 : 0; // a slightly taller upper roof on some payloads
 
   // raised stone terrace (two tiers) — the lip past the eaves encodes the QR
   plate(0, DAIS_R, STONE_PALE, STONE_SH);
   plate(1, DAIS_R - 1, shade(STONE_PALE, 0.02));
-  // a low moon-stair leading up the front of the terrace
-  for (let s = 1; s <= 3; s++) {
-    const [sx, sz] = rot90(0, DAIS_R - 1 + s, wfacing);
-    put(sx, sz, 0, shade(STONE_PALE, -0.03 * s));
-  }
+  // a low moon-stair down the FRONT of the terrace, toward the lake (+row)
+  for (let s = 1; s <= 3; s++) put(0, DAIS_R - 1 + s, 0, shade(STONE_PALE, -0.03 * s));
 
   // four whitewashed brick pillars (3×3 shafts) carrying the open lower level
   for (const [px, pz] of [
@@ -271,14 +280,14 @@ function buildPavilion(
   const roundWindow = (nx: number, nz: number) => {
     const tx = nz; // tangent along the wall
     const tz = -nx;
-    for (let a = -2; a <= 2; a++)
-      for (let dy = -2; dy <= 2; dy++) {
+    for (let a = -3; a <= 3; a++)
+      for (let dy = -3; dy <= 3; dy++) {
         const r2 = a * a + dy * dy;
-        if (r2 > 5) continue; // keep the window inside a tidy disc
+        if (r2 > 10) continue; // keep the window inside a tidy disc (radius ~3)
         const x = nx * BR + tx * a;
         const z = nz * BR + tz * a;
         const ly = cy + dy;
-        if (r2 <= 2) {
+        if (r2 <= 4) {
           // carve the round opening; set a dark recess one voxel in, then float a
           // gilded four-point star (centre + cardinal sun-rays) proud of it
           map.delete(`${x}|${z}|${ly}`);
@@ -288,7 +297,7 @@ function buildPavilion(
               col: ccol + x - nx * 0.4,
               row: crow + z - nz * 0.4,
               y: baseY + ly,
-              size: a === 0 && dy === 0 ? 0.55 : 0.4,
+              size: r2 === 0 ? 0.6 : 0.42,
               color: GOLD,
             });
         } else {
@@ -309,9 +318,9 @@ function buildPavilion(
   plate(r1 + 1, EAVE_R - 2, TILE);
   plate(r1 + 2, EAVE_R - 4, RED, GOLD_DK); // narrow red neck — the gap between the two roofs
   const r2 = r1 + 3; // upper-roof base layer
-  const peak = 2 + pitch; // two or three tile courses up to the peak
+  const peak = 3 + pitch; // three or four tile courses up to the peak (taller roof)
   for (let i = 0; i <= peak; i++) {
-    const hw = Math.max(1, EAVE_R - 1 - i * 2); // upper eave (6) tapering to the peak
+    const hw = Math.max(1, EAVE_R - 1 - i * 2); // upper eave (8) tapering to the peak
     plate(r2 + i, hw, i === 0 ? TILE_RIDGE : TILE, TILE_DK);
   }
   const topL = r2 + peak;
@@ -334,9 +343,9 @@ function buildPavilion(
   // gilded finial crowning the roof (a stacked jewel, like the real bầu rượu),
   // kept small so it can't smother the centre alignment pattern from straight down
   extras.push(
-    { col: ccol, row: crow, y: baseY + topL + 0.7, size: 0.5, color: GOLD_DK },
-    { col: ccol, row: crow, y: baseY + topL + 1.3, size: 0.38, color: GOLD },
-    { col: ccol, row: crow, y: baseY + topL + 1.8, size: 0.26, color: GOLD },
+    { col: ccol, row: crow, y: baseY + topL + 0.8, size: 0.7, color: GOLD_DK },
+    { col: ccol, row: crow, y: baseY + topL + 1.6, size: 0.52, color: GOLD },
+    { col: ccol, row: crow, y: baseY + topL + 2.3, size: 0.36, color: GOLD },
   );
 
   // ENCODE THE QR on the pavilion: recolor each cell-column's TOP voxel to a light
@@ -515,8 +524,8 @@ export const khueVanCacTheme: QRTheme = {
   sunColor: '#fff2da',
   ambient: 0.6,
 
-  // dark modules: flat pale FLAGSTONE across the courtyard (rMod <= INNER_R),
-  // raised flagstone banks further out around the pond
+  // dark modules → the LIGHT material of the zone: pale gray paving on the road cross,
+  // sunlit grass in the four park quadrants.
   column: ({ qRow, qCol, modules, rand }) => {
     // corner stele garden: a raised pale STELE bed on the inner square + TOPIARY on
     // the outer ring. Both are light-reading, and both fold flat to STONE_H in scan
@@ -526,23 +535,23 @@ export const khueVanCacTheme: QRTheme = {
         ? { height: FIN_STELE_H, scanHeight: STONE_H, color: FIN_STELE }
         : { height: FIN_TOPIARY_H, scanHeight: STONE_H, color: FIN_TOPIARY };
     }
-    const center = (modules - 1) / 2;
-    const rMod = Math.hypot(qCol - center, qRow - center);
-    if (rMod <= INNER_R) return { height: STONE_H, color: shade(GROUND_LIGHT, (rand - 0.5) * 0.05) };
-    return { height: STONE_H - 0.15 + rand * STONE_VAR, color: shade(STONE, (rand - 0.5) * 0.04) };
+    const v = (rand - 0.5) * 0.05;
+    return zoneOf(qCol, qRow, modules) === 'road'
+      ? { height: STONE_H, color: shade(ROAD_LIGHT, v) }
+      : { height: STONE_H, color: shade(PARK_LIGHT, v) };
   },
 
-  // light modules: flat dark LATERITE across the courtyard (so no pond near the
-  // pavilion), deep jade POND further out
+  // light modules → the DARK material of the zone: dark gray road joints, shaded park
+  // earth (slightly sunken).
   light: ({ qRow, qCol, modules, rand }) => {
-    // finder gap + separator: a sunken dark water "moat" in 3D that rises flush to
-    // STONE_H when scanning, so the whole corner flattens into one clean square
+    // finder gap + separator: a sunken dark "moat" in 3D that rises flush to STONE_H
+    // when scanning, so the whole corner flattens into one clean square
     if (inFinderZone(qRow, qCol, modules))
       return { height: FIN_MOAT_H, scanHeight: STONE_H, color: FIN_MOAT };
-    const center = (modules - 1) / 2;
-    const rMod = Math.hypot(qCol - center, qRow - center);
-    if (rMod <= INNER_R) return { height: STONE_H, color: shade(GROUND_DARK, (rand - 0.5) * 0.06) };
-    return { height: POND_H, color: POND };
+    const v = (rand - 0.5) * 0.05;
+    return zoneOf(qCol, qRow, modules) === 'road'
+      ? { height: STONE_H, color: shade(ROAD_DARK, v) }
+      : { height: STONE_H - 0.3, color: shade(PARK_DARK, v) };
   },
 
   props: (matrix: QRMatrix): PropVoxel[] => {
@@ -559,21 +568,12 @@ export const khueVanCacTheme: QRTheme = {
     // the seeded pavilion — its top surfaces encode the QR (light/dark tiles)
     out.push(...buildPavilion(ccol, crow, STONE_H, rng, matrix));
 
-    // courtyard furniture around the pavilion (seeded orientation, kept on the
-    // terrace/courtyard so their encoded tops keep the centre scannable): two rows
-    // of doctoral stelae and lanterns slung under the eaves.
-    const courtK = Math.floor(rng() * 4);
-    out.push(...addLanterns(ccol, crow, STONE_H, 12, courtK));
-    {
-      const [ox, oz] = rot90(-(DAIS_R + 2), -3, courtK);
-      const [dx, dz] = rot90(0, 1, courtK);
-      out.push(...buildSteleRow(ccol, crow, STONE_H, ox, oz, dx, dz, 7, matrix));
-    }
-    {
-      const [ox, oz] = rot90(DAIS_R + 2, -3, courtK);
-      const [dx, dz] = rot90(0, 1, courtK);
-      out.push(...buildSteleRow(ccol, crow, STONE_H, ox, oz, dx, dz, 7, matrix));
-    }
+    // lanterns slung under the eaves (4-fold symmetric), and two rows of doctoral
+    // stelae (bia tiến sĩ) flanking the path as it runs back through the park — their
+    // encoded tops keep these cells scannable.
+    out.push(...addLanterns(ccol, crow, STONE_H, 19, 0));
+    out.push(...buildSteleRow(ccol, crow, STONE_H, -3, -16, 0, -1, 6, matrix)); // left edge of the path
+    out.push(...buildSteleRow(ccol, crow, STONE_H, 3, -16, 0, -1, 6, matrix)); // right edge of the path
 
     // stele gardens ON the three corner locator squares — kept on each finder's
     // light centre cells with low, light-reading tops so the corners still scan
@@ -589,8 +589,8 @@ export const khueVanCacTheme: QRTheme = {
     // banks around the pond — two concentric rounds: full-height inner groves
     // hugging the courtyard, then a lower distant tree-line further out, with a
     // gap between so they read as two tree lines (same recipe as the island world).
-    const SECTORS = 14;
-    const CR = 2;
+    const SECTORS = 16;
+    const CR = 3; // bigger clumps → denser groves (they merge into fuller woods)
     const placed = new Set<number>();
 
     const growRound = (
@@ -607,7 +607,9 @@ export const khueVanCacTheme: QRTheme = {
       );
       for (let r = 0; r < matrix.size; r++)
         for (let c = 0; c < matrix.size; c++) {
-          if (!matrix.cells[r][c]) continue; // real flagstone banks only
+          if (!matrix.cells[r][c]) continue; // grass cells (dark modules) only
+          if (r - qz === 6 || c - qz === 6) continue; // never on the timing patterns
+          if (zoneOf(c - qz, r - qz, n) !== 'park') continue; // trees live in the park (road/walls excluded by zone)
           const rMod = rOf(r, c);
           if (rMod < anchorMin || rMod > anchorMax) continue;
           const sec =
@@ -622,7 +624,7 @@ export const khueVanCacTheme: QRTheme = {
         const cand = buckets[s];
         if (!cand.length) continue;
         cand.sort((a, b) => rand2(a.r, a.c) - rand2(b.r, b.c));
-        const cnt = 1 + (rng() > 0.35 ? 1 : 0);
+        const cnt = 2 + (rng() > 0.4 ? 1 : 0);
         for (let a = 0; a < cnt && a < cand.length; a++)
           anchors.push(cand[Math.min(cand.length - 1, Math.floor(((a + 0.5) / cnt) * cand.length))]);
       }
@@ -636,13 +638,15 @@ export const khueVanCacTheme: QRTheme = {
             const r = anc.r + dr;
             const c = anc.c + dc;
             if (r < 0 || r >= matrix.size || c < 0 || c >= matrix.size) continue;
-            if (!matrix.cells[r][c]) continue; // flagstone banks only
+            if (!matrix.cells[r][c]) continue; // grass cells only
+            if (r - qz === 6 || c - qz === 6) continue; // never on the timing patterns
+            if (zoneOf(c - qz, r - qz, n) !== 'park') continue; // stay in the park
             const rm = rOf(r, c);
             if (rm <= growMin || rm > anchorMax) continue;
             const key = r * 10000 + c;
             if (placed.has(key)) continue;
             const rnd = rand2(r, c);
-            const thresh = edge <= 2 ? -1 : 0.3;
+            const thresh = edge <= 2 ? -1 : 0.1; // fill the clump densely (only the very rim thins out)
             if (rnd > thresh && trees < maxTrees) {
               placed.add(key);
               const scale = scaleMin + rand2(c, r) * scaleRange;
@@ -652,24 +656,11 @@ export const khueVanCacTheme: QRTheme = {
           }
     };
 
-    // inner round — full-height groves hugging the courtyard (radius 19–23)
-    growRound(INNER_R + 1, INNER_R + 5, INNER_R, 150, 1, 0);
-    // outer round — a lower, distant tree line further out across the pond
-    growRound(INNER_R + 8, INNER_R + 11, INNER_R + 7, 140, 0.5, 0.25);
+    // the wooded park filling the four quadrants between the road cross — full-height
+    // groves nearer the temple, then a lower distant tree line out toward the edges
+    growRound(16, 25, 15, 450, 1, 0);
+    growRound(26, 32, 25, 320, 0.6, 0.3);
 
-    // a scatter of lotus pads on the pond for detail (dark-green so they never flip
-    // a pond cell), with the odd pale stepping stone
-    let pads = 0;
-    for (let r = 0; r < matrix.size && pads < 16; r++)
-      for (let c = 0; c < matrix.size && pads < 16; c++) {
-        if (matrix.cells[r][c]) continue; // pond cells only
-        const rMod = rOf(r, c);
-        const rnd = rand2(r, c);
-        if (rMod > INNER_R + 1 && rMod < INNER_R + 9 && rnd > 0.93) {
-          out.push({ col: c, row: r, y: POND_H, size: 0.6 + rnd * 0.3, color: shade(PAD, (rnd - 0.5) * 0.12) });
-          pads++;
-        }
-      }
     return out;
   },
 };
