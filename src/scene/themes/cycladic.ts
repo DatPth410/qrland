@@ -277,14 +277,15 @@ function buildChurch(
  * so, from straight down, the sand module underneath still shows and the tree
  * doesn't flip a QR bit.
  */
-function makeTree(col: number, row: number, gy: number, rnd: number): PropVoxel[] {
+function makeTree(col: number, row: number, gy: number, rnd: number, heightScale = 1): PropVoxel[] {
   const lg = LEAF_LIGHT[Math.floor(rnd * 997) % LEAF_LIGHT.length]; // light crown (reads light)
   const dg = LEAF_DARK[Math.floor(rnd * 601) % LEAF_DARK.length]; // dark body (depth)
   // ~2x taller: a trunk + a tall stack of dark-green body voxels with a light
   // crown on top (only the crown matters for the top-down read). Crown kept a
   // bit narrower (W) so the taller trees don't overhang neighbours from above.
   const W = 0.98; // canopy FILLS the cell so the groves read solid (no gappy grid)
-  const tiers = rnd < 0.2 ? 3 : rnd < 0.5 ? 5 : rnd < 0.78 ? 7 : 9; // small → round → tall → cypress
+  const base = rnd < 0.2 ? 3 : rnd < 0.5 ? 5 : rnd < 0.78 ? 7 : 9; // small → round → tall → cypress
+  const tiers = Math.max(2, Math.round(base * heightScale)); // scaled down for a lower outer ring
   const out: PropVoxel[] = [{ col, row, y: gy, size: 0.5, color: TRUNK }];
   // top HALF of the canopy is light green so that — even when a taller tree
   // leans in the top-down perspective — whatever is visible at the top stays
@@ -343,62 +344,81 @@ export const cycladicTheme: QRTheme = {
 
     // trees grouped into CLUMPS (small groves), not scattered singles: pick a
     // few anchor cells spread around the church, then grow a tight grove of
-    // trees on the sand right around each anchor (open sand between clumps)
+    // trees on the sand right around each anchor (open sand between clumps).
+    // Grown as two concentric "rounds": a full-height inner ring hugging the
+    // grounds, then a lower (½–¾ height) outer ring set further out in the sea,
+    // with a sand gap between them so they read as two distinct tree lines.
     const SECTORS = 14;
-    const buckets: Array<Array<{ r: number; c: number }>> = Array.from(
-      { length: SECTORS },
-      () => [],
-    );
-    for (let r = 0; r < matrix.size; r++)
-      for (let c = 0; c < matrix.size; c++) {
-        if (!matrix.cells[r][c]) continue; // real sand only (sandbars beyond the grounds)
-        const rMod = rOf(r, c);
-        if (rMod < INNER_R + 1 || rMod > INNER_R + 5) continue; // ring beyond grounds, off timing
-        const sec =
-          Math.floor(
-            ((Math.atan2(r - qz - center, c - qz - center) + Math.PI) / (2 * Math.PI)) * SECTORS,
-          ) % SECTORS;
-        buckets[sec].push({ r, c });
+    const CR = 2; // grove radius (kept tight to stay in its ring, off the timing pattern)
+    const placed = new Set<number>();
+
+    const growRound = (
+      anchorMin: number, // radial band (module units) where grove anchors are seeded
+      anchorMax: number,
+      growMin: number, // trees never grow at/inside this radius (keeps the inter-ring gap)
+      maxTrees: number,
+      scaleMin: number, // tree-height scale: 1 = full, lower = shorter
+      scaleRange: number,
+    ) => {
+      const buckets: Array<Array<{ r: number; c: number }>> = Array.from(
+        { length: SECTORS },
+        () => [],
+      );
+      for (let r = 0; r < matrix.size; r++)
+        for (let c = 0; c < matrix.size; c++) {
+          if (!matrix.cells[r][c]) continue; // real sand only (sandbars beyond the grounds)
+          const rMod = rOf(r, c);
+          if (rMod < anchorMin || rMod > anchorMax) continue;
+          const sec =
+            Math.floor(
+              ((Math.atan2(r - qz - center, c - qz - center) + Math.PI) / (2 * Math.PI)) * SECTORS,
+            ) % SECTORS;
+          buckets[sec].push({ r, c });
+        }
+
+      // 1-2 clump anchors per sector
+      const anchors: Array<{ r: number; c: number }> = [];
+      for (let s = 0; s < SECTORS; s++) {
+        const cand = buckets[s];
+        if (!cand.length) continue;
+        cand.sort((a, b) => rand2(a.r, a.c) - rand2(b.r, b.c));
+        const n = 1 + (rng() > 0.35 ? 1 : 0);
+        for (let a = 0; a < n && a < cand.length; a++)
+          anchors.push(cand[Math.min(cand.length - 1, Math.floor(((a + 0.5) / n) * cand.length))]);
       }
 
-    // 1-2 clump anchors per sector
-    const anchors: Array<{ r: number; c: number }> = [];
-    for (let s = 0; s < SECTORS; s++) {
-      const cand = buckets[s];
-      if (!cand.length) continue;
-      cand.sort((a, b) => rand2(a.r, a.c) - rand2(b.r, b.c));
-      const n = 1 + (rng() > 0.35 ? 1 : 0);
-      for (let a = 0; a < n && a < cand.length; a++)
-        anchors.push(cand[Math.min(cand.length - 1, Math.floor(((a + 0.5) / n) * cand.length))]);
-    }
-
-    // grow a diamond-shaped grove on the sand around each anchor (dense centre,
-    // thinning at the edges) — every tree sits on a real sand module, light crown
-    const placed = new Set<number>();
-    let trees = 0;
-    const MAX_TREES = 150;
-    const CR = 2; // grove radius (kept tight to stay in the ring, off the timing pattern)
-    for (const anc of anchors)
-      for (let dr = -CR; dr <= CR; dr++)
-        for (let dc = -CR; dc <= CR; dc++) {
-          const edge = Math.abs(dr) + Math.abs(dc);
-          if (edge > CR) continue; // diamond clump
-          const r = anc.r + dr;
-          const c = anc.c + dc;
-          if (r < 0 || r >= matrix.size || c < 0 || c >= matrix.size) continue;
-          if (!matrix.cells[r][c]) continue; // sand only
-          const rm = rOf(r, c);
-          if (rm <= INNER_R || rm > INNER_R + 5) continue; // only the sea ring, off the grounds & timing pattern
-          const key = r * 10000 + c;
-          if (placed.has(key)) continue;
-          const rnd = rand2(r, c);
-          const thresh = edge <= 2 ? -1 : 0.3; // fill the grove densely
-          if (rnd > thresh && trees < MAX_TREES) {
-            placed.add(key);
-            out.push(...makeTree(c, r, SAND_H - 0.15, rnd));
-            trees++;
+      // grow a diamond-shaped grove on the sand around each anchor (dense centre,
+      // thinning at the edges) — every tree sits on a real sand module, light crown
+      let trees = 0;
+      for (const anc of anchors)
+        for (let dr = -CR; dr <= CR; dr++)
+          for (let dc = -CR; dc <= CR; dc++) {
+            const edge = Math.abs(dr) + Math.abs(dc);
+            if (edge > CR) continue; // diamond clump
+            const r = anc.r + dr;
+            const c = anc.c + dc;
+            if (r < 0 || r >= matrix.size || c < 0 || c >= matrix.size) continue;
+            if (!matrix.cells[r][c]) continue; // sand only
+            const rm = rOf(r, c);
+            if (rm <= growMin || rm > anchorMax) continue; // stay in this round's sea band
+            const key = r * 10000 + c;
+            if (placed.has(key)) continue;
+            const rnd = rand2(r, c);
+            const thresh = edge <= 2 ? -1 : 0.3; // fill the grove densely
+            if (rnd > thresh && trees < maxTrees) {
+              placed.add(key);
+              const scale = scaleMin + rand2(c, r) * scaleRange; // decorrelated from rnd
+              out.push(...makeTree(c, r, SAND_H - 0.15, rnd, scale));
+              trees++;
+            }
           }
-        }
+    };
+
+    // inner round — full-height groves hugging the church grounds (radius 17–22)
+    growRound(INNER_R + 1, INNER_R + 5, INNER_R, 150, 1, 0);
+    // outer round — a lower, distant tree line further out in the sea (radius
+    // 24–28), each tree ½–¾ the inner height, with a ~2-module sand gap between
+    growRound(INNER_R + 8, INNER_R + 11, INNER_R + 7, 140, 0.5, 0.25);
 
     // a few sea rocks for detail
     let rocks = 0;
