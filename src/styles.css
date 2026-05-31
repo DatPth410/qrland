@@ -65,6 +65,43 @@ canvas {
   letter-spacing: 0.2px;
 }
 
+.theme-switch {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+}
+
+.theme-tab {
+  appearance: none;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--ui-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  padding: 7px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.theme-tab:hover {
+  color: var(--ui-fg);
+}
+
+.theme-tab.active {
+  background: var(--ui-fg);
+  color: #14161c;
+}
+
 .url-field {
   display: flex;
   flex-direction: column;

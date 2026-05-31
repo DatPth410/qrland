@@ -113,6 +113,15 @@ function rand2(a: number, b: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
 }
 
+/** MUST match QRField.moduleRand: it drives each sand module's height jitter, so a
+ *  folded tree's flat green tile can land at the EXACT height of the sand cell it
+ *  stands on (flush with its neighbours, not a raised bump). */
+function moduleRand(a: number, b: number): number {
+  let h = (Math.imul(a + 1, 73856093) ^ Math.imul(b + 1, 19349663)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0x85ebca6b) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
+}
+
 /** true if a module sits in one of the three 8×8 corner blocks (the 7-module QR
  *  locator plus its 1-module separator) — used to give the corners crisp stone. */
 function inFinderZone(qRow: number, qCol: number, modules: number): boolean {
@@ -354,7 +363,14 @@ function buildChurch(
  * so, from straight down, the sand module underneath still shows and the tree
  * doesn't flip a QR bit.
  */
-function makeTree(col: number, row: number, gy: number, rnd: number, heightScale = 1): PropVoxel[] {
+function makeTree(
+  col: number,
+  row: number,
+  gy: number,
+  rnd: number,
+  heightScale = 1,
+  sandTop = gy,
+): PropVoxel[] {
   const lg = LEAF_LIGHT[Math.floor(rnd * 997) % LEAF_LIGHT.length]; // light crown (reads light)
   const dg = LEAF_DARK[Math.floor(rnd * 601) % LEAF_DARK.length]; // dark body (depth)
   // ~2x taller: a trunk + a tall stack of dark-green body voxels with a light
@@ -363,13 +379,32 @@ function makeTree(col: number, row: number, gy: number, rnd: number, heightScale
   const W = 0.98; // canopy FILLS the cell so the groves read solid (no gappy grid)
   const base = rnd < 0.2 ? 3 : rnd < 0.5 ? 5 : rnd < 0.78 ? 7 : 9; // small → round → tall → cypress
   const tiers = Math.max(2, Math.round(base * heightScale)); // scaled down for a lower outer ring
-  const out: PropVoxel[] = [{ col, row, y: gy, size: 0.5, color: TRUNK }];
+  // Every voxel is iso-only and folds down when the view flattens to scan — the
+  // SAME up/down fold the finder-square gardens use — so each grove springs up in
+  // the isometric scene and lies flat for scanning. The trunk + lower canopy sink
+  // fully into the ground (collapseTo: 0) and shrink to nothing, so they never peek
+  // out from under the tile; the light-green CROWN flattens into a flat green TILE
+  // (tile) that sits FLUSH with the surrounding sand, so the folded tree keeps its
+  // colour as a flat 2D green square on its cell instead of vanishing into the sand.
+  const fold = { isoOnly: true, collapseTo: 0 };
+  // crown tile lands a hair above THIS cell's own sand top, so it's flush with its
+  // sandbar neighbours (which jitter in height) instead of a lone raised bump.
+  const tileTop = sandTop + 0.02;
+  const out: PropVoxel[] = [{ col, row, y: gy, size: 0.5, color: TRUNK, ...fold }];
   // top HALF of the canopy is light green so that — even when a taller tree
   // leans in the top-down perspective — whatever is visible at the top stays
   // "light" and never flips the cell; lower half is dark green for depth in iso
   const lightFrom = Math.ceil(tiers / 2);
   for (let i = 0; i < tiers; i++) {
-    out.push({ col, row, y: gy + 0.7 + i * 0.9, size: W, color: i >= lightFrom ? lg : dg });
+    const isCrown = i === tiers - 1; // top voxel → the flat green scan tile
+    out.push({
+      col,
+      row,
+      y: gy + 0.7 + i * 0.9,
+      size: W,
+      color: i >= lightFrom ? lg : dg,
+      ...(isCrown ? { isoOnly: true, tile: true, collapseTo: tileTop } : fold),
+    });
   }
   return out;
 }
@@ -507,6 +542,7 @@ function decorateFinder(fc: number, fr: number, baseY: number): PropVoxel[] {
 
 export const cycladicTheme: QRTheme = {
   name: 'Cyclades',
+  sampleText: 'https://reactiive.io/demos/cherry-blossom-qrcode',
   background: '#e3e9ec',
   background2: '#acc0c9',
   fog: '#c2d0d6',
@@ -659,7 +695,10 @@ export const cycladicTheme: QRTheme = {
             if (rnd > thresh && trees < maxTrees) {
               placed.add(key);
               const scale = scaleMin + rand2(c, r) * scaleRange; // decorrelated from rnd
-              out.push(...makeTree(c, r, SAND_H - 0.15, rnd, scale));
+              // this cell's own sand height (same formula as column()), so the
+              // folded tree's green tile lands flush on it rather than poking up
+              const sandTop = SAND_H - 0.15 + moduleRand(r - qz, c - qz) * SAND_VAR;
+              out.push(...makeTree(c, r, SAND_H - 0.15, rnd, scale, sandTop));
               trees++;
             }
           }

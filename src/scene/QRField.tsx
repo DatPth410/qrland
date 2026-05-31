@@ -82,7 +82,7 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
       darkCells: dark,
       lightCells: light,
       props: propList.filter((p) => !p.isoOnly),
-      isoProps: propList.filter((p) => p.isoOnly), // finder gardens — hidden in scan
+      isoProps: propList.filter((p) => p.isoOnly), // finder gardens + grove trees — fold flat in scan
     };
   }, [matrix, theme]);
 
@@ -117,16 +117,32 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     mesh.instanceMatrix.needsUpdate = true;
   };
 
-  // iso-only props (finder-square plants): fold down as the view flattens —
-  // squash vertically toward `collapseTo` and sink, so they tuck into the flat
-  // square instead of popping out. At t≈1 they're scaled to ~0 (invisible, and
-  // out of the scanner's way so the corners still decode).
+  // iso-only props (finder-square plants + grove trees): fold down as the view
+  // flattens — squash vertically toward `collapseTo` and sink, so they tuck into
+  // the sand instead of popping out. At t≈1 they're scaled to ~0 (invisible, and
+  // out of the scanner's way so the corners + data cells still decode).
   const writeIsoProps = (mesh: THREE.InstancedMesh | null, list: PropVoxel[], t: number) => {
     if (!mesh || mesh.count < list.length) return;
     const e = 1 - t; // 1 in scene, 0 in scan
     for (let i = 0; i < list.length; i++) {
       const p = list[i];
       const floor = p.collapseTo ?? p.y;
+      if (p.tile) {
+        // grove-tree crown → a flat green cap FLUSH with the surrounding sand: a
+        // solid column from the ground up to `floor`, which is the local sand height
+        // (not SAND_H) so the green sits level with its sandbar neighbours instead of
+        // poking up as a lone raised bump. Kept at crown width (a hair under a cell)
+        // so the wider sand column beneath shows tan on the canyon walls — exactly
+        // like a normal sand cell — and hides the collapsing voxels within it.
+        const top = THREE.MathUtils.lerp(p.y + p.size, floor, t); // crown top → sand height
+        const bot = THREE.MathUtils.lerp(p.y, 0, t); // crown bottom → ground
+        const sy = Math.max(top - bot, 0.0001);
+        tmp.position.set(p.col - half, (top + bot) / 2, p.row - half);
+        tmp.scale.set(p.size, sy, p.size);
+        tmp.updateMatrix();
+        mesh.setMatrixAt(i, tmp.matrix);
+        continue;
+      }
       const y = THREE.MathUtils.lerp(p.y, floor, t);
       const sx = p.size * (0.25 + 0.75 * e); // keep a little footprint, collapse height
       const sy = p.size * e;
@@ -213,9 +229,9 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
           frustumCulled={false}
         />
       )}
-      {/* finder-square gardens: stand up in 3D, then smoothly fold down into the
-          flat square as the view flattens (scaled to ~0 at full scan), so the
-          corners end up flat and the QR keeps decoding from straight down */}
+      {/* finder-square gardens + grove trees: stand up in 3D, then smoothly fold
+          down flat as the view flattens (scaled to ~0 at full scan), so the island
+          lies flat and the QR keeps decoding from straight down */}
       {isoProps.length > 0 && (
         <instancedMesh
           key={`isoprop-${isoProps.length}`}

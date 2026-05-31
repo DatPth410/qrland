@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useView } from '../state/useView';
 import { verifyCanvas } from '../qr/verify';
+import type { QRTheme } from '../scene/theme';
 
 interface OverlayProps {
   text: string;
-  themeName: string;
+  themes: QRTheme[];
+  activeTheme: QRTheme;
+  onSelectTheme: (theme: QRTheme) => void;
   onApplyUrl: (url: string) => void;
   error: string | null;
 }
 
-export function Overlay({ text, themeName, onApplyUrl, error }: OverlayProps) {
+export function Overlay({
+  text,
+  themes,
+  activeTheme,
+  onSelectTheme,
+  onApplyUrl,
+  error,
+}: OverlayProps) {
   const view = useView((s) => s.view);
   const toggle = useView((s) => s.toggle);
   const setView = useView((s) => s.setView);
@@ -56,7 +66,20 @@ export function Overlay({ text, themeName, onApplyUrl, error }: OverlayProps) {
   return (
     <div className="overlay">
       <div className="panel title">
-        <h1>QRLand · {themeName}</h1>
+        <h1>QRLand</h1>
+        <div className="theme-switch" role="tablist" aria-label="Template">
+          {themes.map((t) => (
+            <button
+              key={t.name}
+              role="tab"
+              aria-selected={t === activeTheme}
+              className={`theme-tab ${t === activeTheme ? 'active' : ''}`}
+              onClick={() => onSelectTheme(t)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
         <label className="url-field">
           <span className="url-label">Encodes</span>
           <input
