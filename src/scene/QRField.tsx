@@ -19,6 +19,8 @@ interface Cell {
   r: number;
   c: number;
   h: number;
+  /** height to ease toward in scan view (== h when the cell doesn't fold flat) */
+  hScan: number;
   color: THREE.Color;
 }
 
@@ -31,8 +33,9 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
   const darkRef = useRef<THREE.InstancedMesh>(null!);
   const lightRef = useRef<THREE.InstancedMesh>(null!);
   const propRef = useRef<THREE.InstancedMesh>(null!);
+  const isoPropRef = useRef<THREE.InstancedMesh>(null!);
 
-  const { darkCells, lightCells, props } = useMemo(() => {
+  const { darkCells, lightCells, props, isoProps } = useMemo(() => {
     const qz = matrix.quietZone;
     const n = matrix.modules;
     const center = (n - 1) / 2 || 1;
@@ -55,15 +58,32 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
             ? theme.light(input)
             : { height: seaH, color: seaColor };
           const v = (moduleRand(r, c) - 0.5) * 0.05;
-          light.push({ r, c, h: spec.height, color: new THREE.Color(spec.color).offsetHSL(0, 0, v) });
+          light.push({
+            r,
+            c,
+            h: spec.height,
+            hScan: spec.scanHeight ?? spec.height,
+            color: new THREE.Color(spec.color).offsetHSL(0, 0, v),
+          });
           continue;
         }
         const spec: ColumnSpec = theme.column(input);
-        dark.push({ r, c, h: spec.height, color: new THREE.Color(spec.color) });
+        dark.push({
+          r,
+          c,
+          h: spec.height,
+          hScan: spec.scanHeight ?? spec.height,
+          color: new THREE.Color(spec.color),
+        });
       }
     }
     const propList: PropVoxel[] = theme.props ? theme.props(matrix) : [];
-    return { darkCells: dark, lightCells: light, props: propList };
+    return {
+      darkCells: dark,
+      lightCells: light,
+      props: propList.filter((p) => !p.isoOnly),
+      isoProps: propList.filter((p) => p.isoOnly), // finder gardens — hidden in scan
+    };
   }, [matrix, theme]);
 
   const geo = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
@@ -77,12 +97,41 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
   const half = matrix.size / 2 - 0.5;
   const tmp = useMemo(() => new THREE.Object3D(), []);
 
-  const writeCells = (mesh: THREE.InstancedMesh | null, cells: Cell[], footprint: number) => {
+  // t = 0 in scene (3D) view, 1 in scan (flat) view — cells with a distinct
+  // scanHeight ease their height between the two as the transition plays.
+  const writeCells = (
+    mesh: THREE.InstancedMesh | null,
+    cells: Cell[],
+    footprint: number,
+    t: number,
+  ) => {
     if (!mesh || mesh.count < cells.length) return; // mesh may be remounting (count change)
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
-      tmp.position.set(cell.c - half, cell.h / 2, cell.r - half);
-      tmp.scale.set(footprint, cell.h, footprint);
+      const h = cell.h === cell.hScan ? cell.h : THREE.MathUtils.lerp(cell.h, cell.hScan, t);
+      tmp.position.set(cell.c - half, h / 2, cell.r - half);
+      tmp.scale.set(footprint, h, footprint);
+      tmp.updateMatrix();
+      mesh.setMatrixAt(i, tmp.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+
+  // iso-only props (finder-square plants): fold down as the view flattens —
+  // squash vertically toward `collapseTo` and sink, so they tuck into the flat
+  // square instead of popping out. At t≈1 they're scaled to ~0 (invisible, and
+  // out of the scanner's way so the corners still decode).
+  const writeIsoProps = (mesh: THREE.InstancedMesh | null, list: PropVoxel[], t: number) => {
+    if (!mesh || mesh.count < list.length) return;
+    const e = 1 - t; // 1 in scene, 0 in scan
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      const floor = p.collapseTo ?? p.y;
+      const y = THREE.MathUtils.lerp(p.y, floor, t);
+      const sx = p.size * (0.25 + 0.75 * e); // keep a little footprint, collapse height
+      const sy = p.size * e;
+      tmp.position.set(p.col - half, y + sy / 2, p.row - half);
+      tmp.scale.set(sx, Math.max(sy, 0.0001), sx);
       tmp.updateMatrix();
       mesh.setMatrixAt(i, tmp.matrix);
     }
@@ -99,6 +148,7 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     if (dark.instanceColor) dark.instanceColor.needsUpdate = true;
     if (light.instanceColor) light.instanceColor.needsUpdate = true;
 
+    // static props: transform + color set once here
     if (propRef.current && propRef.current.count >= props.length) {
       const col = new THREE.Color();
       props.forEach((p, i) => {
@@ -111,8 +161,14 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
       propRef.current.instanceMatrix.needsUpdate = true;
       if (propRef.current.instanceColor) propRef.current.instanceColor.needsUpdate = true;
     }
-    lastGap.current = -1; // force a cell rewrite on next frame
-  }, [darkCells, lightCells, props, half, tmp]);
+    // iso-only props: colors set once here, transforms animated each frame
+    if (isoPropRef.current && isoPropRef.current.count >= isoProps.length) {
+      const col = new THREE.Color();
+      isoProps.forEach((p, i) => isoPropRef.current.setColorAt(i, col.set(p.color)));
+      if (isoPropRef.current.instanceColor) isoPropRef.current.instanceColor.needsUpdate = true;
+    }
+    lastGap.current = -1; // force a cell + iso-prop rewrite on next frame
+  }, [darkCells, lightCells, props, isoProps, half, tmp]);
 
   useFrame((_, delta) => {
     const target = view === 'scan' ? 1 : 0;
@@ -122,8 +178,10 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     lastGap.current = gap.current;
 
     const footprint = 1 - GAP_3D * (1 - gap.current);
-    writeCells(darkRef.current, darkCells, footprint);
-    writeCells(lightRef.current, lightCells, footprint);
+    const t = gap.current; // 0 scene → 1 scan, eased by the same damping
+    writeCells(darkRef.current, darkCells, footprint, t);
+    writeCells(lightRef.current, lightCells, footprint, t);
+    writeIsoProps(isoPropRef.current, isoProps, t);
   });
 
   return (
@@ -150,6 +208,19 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
           key={`prop-${props.length}`}
           ref={propRef}
           args={[geo, propMat, props.length]}
+          castShadow
+          receiveShadow
+          frustumCulled={false}
+        />
+      )}
+      {/* finder-square gardens: stand up in 3D, then smoothly fold down into the
+          flat square as the view flattens (scaled to ~0 at full scan), so the
+          corners end up flat and the QR keeps decoding from straight down */}
+      {isoProps.length > 0 && (
+        <instancedMesh
+          key={`isoprop-${isoProps.length}`}
+          ref={isoPropRef}
+          args={[geo, propMat, isoProps.length]}
           castShadow
           receiveShadow
           frustumCulled={false}

@@ -33,6 +33,11 @@ export interface ColumnSpec {
   height: number;
   /** hex color of the column in 3D view */
   color: string;
+  /** optional height to ease toward in the flat (top-down scan) view, so a cell
+   *  can stand tall as 3D relief yet fold down flat for scanning. The field
+   *  smoothly lerps height between `height` (scene) and `scanHeight` (scan)
+   *  during the view transition. Defaults to `height` (no change). */
+  scanHeight?: number;
 }
 
 /** A decorative voxel placed in 3D view only (scales in with the raise factor). */
@@ -45,6 +50,13 @@ export interface PropVoxel {
   /** size in voxel units */
   size: number;
   color: string;
+  /** if true, this prop belongs to the 3D (scene) view only. Instead of popping
+   *  out when scanning, it smoothly shrinks + sinks to `collapseTo` as the view
+   *  flattens — so finder-square plants fold down into the flat scan square. */
+  isoOnly?: boolean;
+  /** y-plane an `isoOnly` prop folds down into during the scan transition
+   *  (defaults to its own base `y`, i.e. shrink in place). */
+  collapseTo?: number;
 }
 
 export interface QRTheme {

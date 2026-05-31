@@ -8,11 +8,15 @@ import type { QRMatrix } from '../../qr/generate';
  * high-contrast (inverted) QR that scanners decode — the island stays 3D and is
  * scannable from the top.
  *
- * Only the building's small sand pad overwrites the code; everything around it
- * is REAL QR data. Trees sit on real sand-module clusters (so they move with the
- * data), and the church is seeded from the payload (dome height, tower, windows)
- * so each URL renders a slightly different church. The pad/footprint stays fixed
- * so error-correction capacity — and scannability — is unchanged across inputs.
+ * The church's walls, plaza and courtyard encode REAL QR data on their top faces,
+ * but its DOME is left a solid Aegean-blue roof — the classic Cycladic look. The
+ * blue roof drops its data dead-centre, which level-H error correction (~30%
+ * budget) absorbs; only a small patch at the dome's crown keeps encoding, to spare
+ * the centre alignment pattern (a function pattern EC can't repair, like the corner
+ * finders). Trees sit on real sand-module clusters (so they move with the data),
+ * and the church is seeded from the payload (dome height, tower, windows) so each
+ * URL renders a slightly different church — within a fixed footprint, so
+ * scannability is unchanged across inputs.
  */
 
 // --- sizing (module/voxel units): biggest church that still reliably scans
@@ -23,6 +27,12 @@ const BODY_R = 10; // church body half-width
 const BODY_H = 9; // church body height (modest so the dome doesn't smear in top-down)
 const DRUM_R = 10; // dome drum radius (matches the dome so the windowed drum shows)
 const DOME_R = 10; // dome base radius
+// The dome is a solid blue roof EXCEPT a small patch at its crown that keeps
+// encoding the QR. That patch preserves the centre ALIGNMENT pattern — a
+// structural function pattern that error correction does NOT protect (like the
+// corner finders), so it must survive for the grid to lock. Chebyshev keep-radius
+// in module units around the dead centre; 3 → a 7×7 patch covering the 5×5 marker.
+const DOME_KEEP_R = 3;
 
 const SAND_H = 1.3;
 const SEA_H = 0.5;
@@ -53,8 +63,6 @@ const CROSS = '#d8c879';
 // tilework, not noise — while keeping a strong light/dark luminance gap to scan.
 const QR_WALL_LIGHT = '#f3efe5'; // warm whitewash
 const QR_WALL_DARK = '#235f87'; // Aegean blue (blue-shuttered look)
-const QR_DOME_LIGHT = '#bcd7e8'; // pale sky
-const QR_DOME_DARK = '#154a6c'; // deep dome blue
 const QR_PLAZA_LIGHT = GROUND_LIGHT; // brown grounds — light tan
 const QR_PLAZA_DARK = GROUND_DARK; // brown grounds — dark earth
 const TRUNK = '#7b5a39';
@@ -65,6 +73,28 @@ const TRUNK = '#7b5a39';
 const LEAF_LIGHT = ['#abc77f', '#b6d089', '#a1bd76'];
 const LEAF_DARK = ['#5f7e40', '#6e8e4e', '#557237', '#4a6a33'];
 const ROCK = '#9a937f';
+// crisp stone for the three QR locator squares at the corners: clean limestone
+// (dark modules) vs deep Aegean slate (light modules), so each corner reads as a
+// deliberate flat platform — kept flat at sand height (no smear) because the
+// corners carry the most top-down perspective skew and must still scan.
+// corner locator squares are a tiered voxel GARDEN that still scans (painted in
+// column()/light() below): the finder's two light parts become light-reading
+// plants (GRASS on the outer ring, a FLOWER bed on the inner square) and the
+// gap+separator become a sunken dark SLATE moat. Different heights give real 3D
+// relief in BOTH views; kept moderate so the corner's top-down skew can't smear
+// a raised cell onto its darker neighbour and break the finder.
+const FINDER_GRASS = '#aecb80'; // light green (reads "light")
+const FINDER_FLOWER = '#ec9ec9'; // rose pink — MUST stay light (luma ~186) to scan
+const FLOWER_DEEP = '#d27fb2'; // richer pink, iso-only bloom depth (never scanned)
+const FINDER_SLATE = '#1c3a4e'; // deep slate (reads "dark")
+const FIN_GRASS_H = SAND_H + 0.35; // outer ring, slightly raised
+const FIN_FLOWER_H = SAND_H + 0.9; // inner square, a raised flower bed
+const FIN_MOAT_H = SAND_H - 0.55; // gap + separator, sunken moat
+// bougainvillea — magenta-pink blooms that climb the whitewashed walls (placed as
+// EXTRAS on vertical faces only, never a column top, so any color is safe)
+const BOUGAIN = ['#c83a73', '#d8568a', '#b73168'];
+// pergola posts / garden-wall trim — Aegean blue against the whitewash
+const PERGOLA_POST = '#2f6090';
 
 const shade = (() => {
   const c = new THREE.Color();
@@ -81,6 +111,46 @@ function rand2(a: number, b: number): number {
   let h = (Math.imul(a + 7, 73856093) ^ Math.imul(b + 13, 19349663)) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 0x85ebca6b) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
+}
+
+/** true if a module sits in one of the three 8×8 corner blocks (the 7-module QR
+ *  locator plus its 1-module separator) — used to give the corners crisp stone. */
+function inFinderZone(qRow: number, qCol: number, modules: number): boolean {
+  const lo = 7; // rows/cols 0..7
+  const hi = modules - 8; // rows/cols (n-8)..(n-1)
+  const top = qRow >= 0 && qRow <= lo;
+  const bottom = qRow >= hi && qRow <= modules - 1;
+  const left = qCol >= 0 && qCol <= lo;
+  const right = qCol >= hi && qCol <= modules - 1;
+  return (top && left) || (top && right) || (bottom && left);
+}
+
+/** Chebyshev ring of a module relative to the nearest finder centre (0 = centre,
+ *  1 = inner-square edge, 2 = gap, 3 = outer ring, 4 = separator) — lets the
+ *  theme paint the corner garden ring by ring. */
+function finderRing(qRow: number, qCol: number, modules: number): number {
+  const centres: Array<[number, number]> = [
+    [3, 3],
+    [3, modules - 4],
+    [modules - 4, 3],
+  ];
+  let best = 99;
+  for (const [cr, cc] of centres)
+    best = Math.min(best, Math.max(Math.abs(qRow - cr), Math.abs(qCol - cc)));
+  return best;
+}
+
+/** rotate an integer (x,z) offset by k×90° (stays axis-aligned) so the courtyard
+ *  furniture faces a different way per payload while remaining scannable */
+function rot90(x: number, z: number, k: number): [number, number] {
+  let a = x;
+  let b = z;
+  for (let i = 0; i < (k & 3); i++) {
+    const t = a;
+    a = -b;
+    b = t;
+  }
+  return [a, b];
 }
 
 /** FNV-1a hash of the payload → a stable per-URL seed */
@@ -238,7 +308,7 @@ function buildChurch(
     const bell = l === towerH - 1 || l === towerH - 3; // two stacked bell openings
     put(tx, tz, l, bell ? BLUE_TRIM : WHITE);
   }
-  put(tx, tz, towerH + 1, DOME, 0.9); // little domed cap (recolored to a QR tile)
+  put(tx, tz, towerH + 1, DOME, 0.9); // little domed cap (stays solid blue, like the dome)
   extras.push(
     { col: ccol + tx, row: crow + tz, y: baseY + towerH + 2, size: 0.32, color: CROSS },
     { col: ccol + tx, row: crow + tz, y: baseY + towerH + 2.7, size: 0.32, color: CROSS },
@@ -263,8 +333,15 @@ function buildChurch(
     const gc = ccol + x;
     const isDark = !!(matrix.cells[gr] && matrix.cells[gr][gc]); // dark module → light tile
     const isDome = v.color === DOME || v.color === DOME_TOP || v.color === DOME_DARK;
-    if (isDome) v.color = isDark ? QR_DOME_LIGHT : QR_DOME_DARK;
-    else if (layer <= 1) v.color = isDark ? QR_PLAZA_LIGHT : QR_PLAZA_DARK; // plaza floor
+    // Leave the DOME a solid Aegean blue (its natural base→apex shading) instead of
+    // encoding QR tiles on it — the classic Cycladic blue roof. Its footprint sits
+    // dead-centre (clear of the three corner finders) and reads as "damage" that
+    // level-H error correction (~30% budget) absorbs. EXCEPTION: a small patch at
+    // the crown keeps encoding, so the centre alignment pattern (a function pattern
+    // EC does NOT protect) survives and the decoder can still lock onto the grid.
+    const inKeepPatch = Math.max(Math.abs(x), Math.abs(z)) <= DOME_KEEP_R;
+    if (isDome && !inKeepPatch) continue;
+    if (layer <= 1) v.color = isDark ? QR_PLAZA_LIGHT : QR_PLAZA_DARK; // plaza floor
     else v.color = isDark ? QR_WALL_LIGHT : QR_WALL_DARK;
   }
 
@@ -297,6 +374,137 @@ function makeTree(col: number, row: number, gy: number, rnd: number, heightScale
   return out;
 }
 
+/**
+ * Recolor the TOP voxel of every column in `vox` to match the QR module beneath
+ * it (dark module → light tile, light module → dark tile) — the church's trick,
+ * reused so a structure standing on the data-bearing plaza stays scannable from
+ * straight down. Lower (side-face) voxels keep their decorative color.
+ */
+function encodeTops(vox: PropVoxel[], matrix: QRMatrix, pal: { light: string; dark: string }) {
+  const top = new Map<string, PropVoxel>();
+  for (const v of vox) {
+    const k = `${Math.round(v.col)}|${Math.round(v.row)}`;
+    const cur = top.get(k);
+    if (!cur || v.y > cur.y) top.set(k, v);
+  }
+  for (const v of top.values()) {
+    const gr = Math.round(v.row);
+    const gc = Math.round(v.col);
+    const isDark = !!(matrix.cells[gr] && matrix.cells[gr][gc]);
+    v.color = isDark ? pal.light : pal.dark;
+  }
+}
+
+/** A low whitewashed garden wall: a run of `len` cells, two voxels tall. The cap
+ *  voxel encodes the QR (so the wall may cross the plaza); the side is whitewash. */
+function buildWall(
+  ccol: number,
+  crow: number,
+  baseY: number,
+  ox: number,
+  oz: number,
+  dx: number,
+  dz: number,
+  len: number,
+  matrix: QRMatrix,
+): PropVoxel[] {
+  const vox: PropVoxel[] = [];
+  for (let i = 0; i < len; i++) {
+    const col = ccol + ox + dx * i;
+    const row = crow + oz + dz * i;
+    vox.push({ col, row, y: baseY + 2, size: 1, color: WHITE }); // whitewashed side
+    vox.push({ col, row, y: baseY + 3, size: 1, color: WHITE_SH }); // cap (encodes)
+  }
+  encodeTops(vox, matrix, { light: QR_WALL_LIGHT, dark: QR_WALL_DARK });
+  return vox;
+}
+
+/** A shaded pergola: four blue posts on a 3×3 footprint beneath a flat slatted
+ *  roof. The roof tiles encode the QR; the posts stay Aegean blue in iso view. */
+function buildPergola(
+  ccol: number,
+  crow: number,
+  baseY: number,
+  ox: number,
+  oz: number,
+  matrix: QRMatrix,
+): PropVoxel[] {
+  const vox: PropVoxel[] = [];
+  const postH = 3;
+  for (const [px, pz] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ]) {
+    for (let l = 0; l < postH; l++)
+      vox.push({ col: ccol + ox + px, row: crow + oz + pz, y: baseY + 2 + l, size: 1, color: PERGOLA_POST });
+  }
+  for (let x = -1; x <= 1; x++)
+    for (let z = -1; z <= 1; z++)
+      vox.push({ col: ccol + ox + x, row: crow + oz + z, y: baseY + 2 + postH, size: 1, color: PERGOLA_POST });
+  encodeTops(vox, matrix, { light: QR_WALL_LIGHT, dark: QR_WALL_DARK });
+  return vox;
+}
+
+/** Bougainvillea climbing the church's outer walls — pink blooms on the vertical
+ *  faces only (below the roofline, so never a column top → never flips a bit). */
+function addBougainvillea(ccol: number, crow: number, baseY: number, k: number): PropVoxel[] {
+  const out: PropVoxel[] = [];
+  const spots = [
+    { x: BODY_R, z: -4, dx: 1, dz: 0 },
+    { x: BODY_R, z: 3, dx: 1, dz: 0 },
+    { x: -BODY_R, z: -2, dx: -1, dz: 0 },
+    { x: -BODY_R, z: 4, dx: -1, dz: 0 },
+  ];
+  for (const s of spots) {
+    const [sx, sz] = rot90(s.x, s.z, k);
+    const [dx, dz] = rot90(s.dx, s.dz, k);
+    for (let l = 3; l <= 6; l++)
+      out.push({
+        col: ccol + sx + dx * 0.32,
+        row: crow + sz + dz * 0.32,
+        y: baseY + l,
+        size: 0.5,
+        color: BOUGAIN[(l + Math.abs(s.z)) % BOUGAIN.length],
+      });
+  }
+  return out;
+}
+
+/**
+ * A small low garden ON a corner locator square: a flowering centrepiece plus
+ * light-green foliage, all kept on the finder's light CENTRE cells with LIGHT
+ * tops and only 1–2 voxels tall. The corners carry the most top-down skew, so
+ * staying low + light-topped is what keeps the three finders scannable.
+ * (fc, fr) = grid col/row of the finder's centre module.
+ */
+function decorateFinder(fc: number, fr: number, baseY: number): PropVoxel[] {
+  const out: PropVoxel[] = [];
+  const GRASS = LEAF_LIGHT[0]; // light green, reads "light" so the outer ring holds
+  // Walk the 7x7 finder by Chebyshev ring from its centre cell. The outer ring
+  // and the inner square are both LIGHT cells, so light-topped grass/flowers keep
+  // the finder's light/dark/light pattern; the gap ring stays a dark slate moat.
+  for (let dx = -3; dx <= 3; dx++)
+    for (let dy = -3; dy <= 3; dy++) {
+      const ring = Math.max(Math.abs(dx), Math.abs(dy));
+      const col = fc + dx;
+      const row = fr + dy;
+      if (ring <= 1) {
+        // inner square -> blooms standing ON the raised flower bed. iso-only, and
+        // they FOLD DOWN to the flat square (collapseTo: baseY) as the view
+        // flattens, so the corner ends up flat + scannable but the colour stays.
+        out.push({ col, row, y: baseY + 0.9, size: 0.6, color: FLOWER_DEEP, isoOnly: true, collapseTo: baseY });
+        out.push({ col, row, y: baseY + 1.5, size: 0.85, color: FINDER_FLOWER, isoOnly: true, collapseTo: baseY });
+      } else if (ring === 3) {
+        // outer ring -> grass blades that likewise fold down to the flat square
+        out.push({ col, row, y: baseY + 0.35, size: 0.55, color: LEAF_DARK[1], isoOnly: true, collapseTo: baseY });
+        out.push({ col, row, y: baseY + 0.85, size: 0.85, color: GRASS, isoOnly: true, collapseTo: baseY });
+      }
+    }
+  return out;
+}
+
 export const cycladicTheme: QRTheme = {
   name: 'Cyclades',
   background: '#e3e9ec',
@@ -313,6 +521,14 @@ export const cycladicTheme: QRTheme = {
   // dark modules: flat LIGHT-BROWN tile across the church grounds (rMod <=
   // INNER_R), raised SAND sandbars further out
   column: ({ qRow, qCol, modules, rand }) => {
+    // corner garden: a raised FLOWER bed on the inner square + GRASS on the outer
+    // ring. Both are light-reading, and both fold flat to SAND_H in scan view
+    // (scanHeight) so the finder reads as a clean flat square from straight down.
+    if (inFinderZone(qRow, qCol, modules)) {
+      return finderRing(qRow, qCol, modules) <= 1
+        ? { height: FIN_FLOWER_H, scanHeight: SAND_H, color: FINDER_FLOWER }
+        : { height: FIN_GRASS_H, scanHeight: SAND_H, color: FINDER_GRASS };
+    }
     const center = (modules - 1) / 2;
     const rMod = Math.hypot(qCol - center, qRow - center);
     if (rMod <= INNER_R) return { height: SAND_H, color: shade(GROUND_LIGHT, (rand - 0.5) * 0.05) };
@@ -322,6 +538,10 @@ export const cycladicTheme: QRTheme = {
   // light modules: flat DARK-BROWN tile across the church grounds (so no blue sea
   // near the church), deep blue SEA further out
   light: ({ qRow, qCol, modules, rand }) => {
+    // finder gap + separator: a sunken dark slate "moat" in 3D that rises flush to
+    // SAND_H when scanning, so the whole corner flattens into one clean square
+    if (inFinderZone(qRow, qCol, modules))
+      return { height: FIN_MOAT_H, scanHeight: SAND_H, color: FINDER_SLATE };
     const center = (modules - 1) / 2;
     const rMod = Math.hypot(qCol - center, qRow - center);
     if (rMod <= INNER_R) return { height: SAND_H, color: shade(GROUND_DARK, (rand - 0.5) * 0.06) };
@@ -341,6 +561,37 @@ export const cycladicTheme: QRTheme = {
 
     // the seeded church — its top surfaces encode the QR (light/dark tiles)
     out.push(...buildChurch(ccol, crow, SAND_H, rng, matrix));
+
+    // courtyard furniture around the church (seeded orientation, kept on the
+    // plaza so their encoded tops keep the centre scannable): bougainvillea on
+    // the church walls, two garden walls, and a pergola — each its own
+    // component, auto-placed.
+    const courtK = Math.floor(rng() * 4);
+    out.push(...addBougainvillea(ccol, crow, SAND_H, courtK));
+    {
+      const [ox, oz] = rot90(-14, -3, courtK);
+      const [dx, dz] = rot90(0, 1, courtK);
+      out.push(...buildWall(ccol, crow, SAND_H, ox, oz, dx, dz, 7, matrix));
+    }
+    {
+      const [ox, oz] = rot90(-3, -13, courtK);
+      const [dx, dz] = rot90(1, 0, courtK);
+      out.push(...buildWall(ccol, crow, SAND_H, ox, oz, dx, dz, 6, matrix));
+    }
+    {
+      const [ox, oz] = rot90(13, 0, courtK);
+      out.push(...buildPergola(ccol, crow, SAND_H, ox, oz, matrix));
+    }
+
+    // flower gardens ON the three corner locator squares — kept on each finder's
+    // light centre cells with low, light-reading tops so the corners still scan
+    for (const [fc, fr] of [
+      [qz + 3, qz + 3],
+      [qz + n - 4, qz + 3],
+      [qz + 3, qz + n - 4],
+    ]) {
+      out.push(...decorateFinder(fc, fr, SAND_H));
+    }
 
     // trees grouped into CLUMPS (small groves), not scattered singles: pick a
     // few anchor cells spread around the church, then grow a tight grove of
