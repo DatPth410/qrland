@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "QRLand",
+    "slug": "qrland",
+    "scheme": "qrland",
+    "userInterfaceStyle": "automatic",
+    "orientation": "portrait",
+    "web": {
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-splash-screen",
+      "expo-status-bar"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.anonymous.qrland"
+    }
+  }
+}
