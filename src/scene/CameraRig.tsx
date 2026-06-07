@@ -56,7 +56,14 @@ export function CameraRig({ fitRadius }: { fitRadius: number }) {
     if (!controls) return;
     const animate = didInit.current;
     didInit.current = true;
-    const az = view === 'scan' ? 0 : ISO_AZIMUTH;
+    const targetAz0 = view === 'scan' ? 0 : ISO_AZIMUTH;
+    const currentAz = controls.azimuthAngle;
+    
+    let diff = (targetAz0 - currentAz) % (Math.PI * 2);
+    if (diff > Math.PI) diff -= Math.PI * 2;
+    if (diff < -Math.PI) diff += Math.PI * 2;
+    
+    const az = currentAz + diff;
     const pol = view === 'scan' ? TOP_POLAR : ISO_POLAR;
     controls.setOrbitPoint(0, 0, 0);
     controls.rotateTo(az, pol, animate);
