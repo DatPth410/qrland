@@ -66,8 +66,8 @@ export function CameraRig({ fitRadius }: { fitRadius: number }) {
     const az = currentAz + diff;
     const pol = view === 'scan' ? TOP_POLAR : ISO_POLAR;
     controls.setOrbitPoint(0, 0, 0);
+    controls.fitToSphere(sphere, false);
     controls.rotateTo(az, pol, animate);
-    controls.fitToSphere(sphere, animate);
     if (!animate) {
       controls.update(0);
       gl.render(scene, camera);

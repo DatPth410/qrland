@@ -33,9 +33,14 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
   const darkRef = useRef<THREE.InstancedMesh>(null!);
   const lightRef = useRef<THREE.InstancedMesh>(null!);
   const propRef = useRef<THREE.InstancedMesh>(null!);
+  const glowingPropRef = useRef<THREE.InstancedMesh>(null!);
   const isoPropRef = useRef<THREE.InstancedMesh>(null!);
+  const glowIsoPropRef = useRef<THREE.InstancedMesh>(null!);
 
-  const { darkCells, lightCells, props, isoProps } = useMemo(() => {
+  const time = useView((s) => s.time);
+  const isNight = time < 6 || time >= 18;
+
+  const { darkCells, lightCells, standardProps, glowingProps, isoProps, glowIsoProps, lightSources } = useMemo(() => {
     const qz = matrix.quietZone;
     const n = matrix.modules;
     const center = (n - 1) / 2 || 1;
@@ -81,8 +86,11 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     return {
       darkCells: dark,
       lightCells: light,
-      props: propList.filter((p) => !p.isoOnly),
-      isoProps: propList.filter((p) => p.isoOnly), // finder gardens + grove trees — fold flat in scan
+      standardProps: propList.filter((p) => !p.isoOnly && !p.glowing),
+      glowingProps: propList.filter((p) => p.glowing && !p.isoOnly),
+      isoProps: propList.filter((p) => p.isoOnly && !p.glowing), // finder gardens + grove trees — fold flat in scan
+      glowIsoProps: propList.filter((p) => p.glowing && p.isoOnly), // lanterns/glows — fold away in scan
+      lightSources: propList.filter((p) => p.light),
     };
   }, [matrix, theme]);
 
@@ -93,6 +101,7 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     [],
   );
   const propMat = useMemo(() => new THREE.MeshStandardMaterial({ roughness: 0.72 }), []);
+  const glowingMat = useMemo(() => new THREE.MeshBasicMaterial(), []);
 
   const half = matrix.size / 2 - 0.5;
   const tmp = useMemo(() => new THREE.Object3D(), []);
@@ -165,9 +174,9 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     if (light.instanceColor) light.instanceColor.needsUpdate = true;
 
     // static props: transform + color set once here
-    if (propRef.current && propRef.current.count >= props.length) {
+    if (propRef.current && propRef.current.count >= standardProps.length) {
       const col = new THREE.Color();
-      props.forEach((p, i) => {
+      standardProps.forEach((p, i) => {
         tmp.position.set(p.col - half, p.y + p.size / 2, p.row - half);
         tmp.scale.set(p.size, p.size, p.size);
         tmp.updateMatrix();
@@ -177,14 +186,33 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
       propRef.current.instanceMatrix.needsUpdate = true;
       if (propRef.current.instanceColor) propRef.current.instanceColor.needsUpdate = true;
     }
+    // glowing props: similar but unlit material
+    if (glowingPropRef.current && glowingPropRef.current.count >= glowingProps.length) {
+      const col = new THREE.Color();
+      glowingProps.forEach((p, i) => {
+        tmp.position.set(p.col - half, p.y + p.size / 2, p.row - half);
+        tmp.scale.set(p.size, p.size, p.size);
+        tmp.updateMatrix();
+        glowingPropRef.current.setMatrixAt(i, tmp.matrix);
+        glowingPropRef.current.setColorAt(i, col.set(p.color));
+      });
+      glowingPropRef.current.instanceMatrix.needsUpdate = true;
+      if (glowingPropRef.current.instanceColor) glowingPropRef.current.instanceColor.needsUpdate = true;
+    }
     // iso-only props: colors set once here, transforms animated each frame
     if (isoPropRef.current && isoPropRef.current.count >= isoProps.length) {
       const col = new THREE.Color();
       isoProps.forEach((p, i) => isoPropRef.current.setColorAt(i, col.set(p.color)));
       if (isoPropRef.current.instanceColor) isoPropRef.current.instanceColor.needsUpdate = true;
     }
+    // glowing iso props (lantern flames, window glows): same — fold animated per frame
+    if (glowIsoPropRef.current && glowIsoPropRef.current.count >= glowIsoProps.length) {
+      const col = new THREE.Color();
+      glowIsoProps.forEach((p, i) => glowIsoPropRef.current.setColorAt(i, col.set(p.color)));
+      if (glowIsoPropRef.current.instanceColor) glowIsoPropRef.current.instanceColor.needsUpdate = true;
+    }
     lastGap.current = -1; // force a cell + iso-prop rewrite on next frame
-  }, [darkCells, lightCells, props, isoProps, half, tmp]);
+  }, [darkCells, lightCells, standardProps, glowingProps, isoProps, glowIsoProps, half, tmp]);
 
   useFrame((_, delta) => {
     const target = view === 'scan' ? 1 : 0;
@@ -198,6 +226,7 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
     writeCells(darkRef.current, darkCells, footprint, t);
     writeCells(lightRef.current, lightCells, footprint, t);
     writeIsoProps(isoPropRef.current, isoProps, t);
+    writeIsoProps(glowIsoPropRef.current, glowIsoProps, t);
   });
 
   return (
@@ -219,13 +248,21 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
         receiveShadow
         frustumCulled={false}
       />
-      {props.length > 0 && (
+      {standardProps.length > 0 && (
         <instancedMesh
-          key={`prop-${props.length}`}
+          key={`prop-${standardProps.length}`}
           ref={propRef}
-          args={[geo, propMat, props.length]}
+          args={[geo, propMat, standardProps.length]}
           castShadow
           receiveShadow
+          frustumCulled={false}
+        />
+      )}
+      {glowingProps.length > 0 && (
+        <instancedMesh
+          key={`glowing-${glowingProps.length}`}
+          ref={glowingPropRef}
+          args={[geo, glowingMat, glowingProps.length]}
           frustumCulled={false}
         />
       )}
@@ -242,12 +279,36 @@ export function QRField({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
           frustumCulled={false}
         />
       )}
+      {/* glowing iso props (lantern flames, interior window glow): unlit material,
+          and they fold away with the same scan transition so no bright voxel is
+          left floating over the modules when reading from straight down */}
+      {glowIsoProps.length > 0 && (
+        <instancedMesh
+          key={`glowiso-${glowIsoProps.length}`}
+          ref={glowIsoPropRef}
+          args={[geo, glowingMat, glowIsoProps.length]}
+          frustumCulled={false}
+        />
+      )}
 
       {/* pedestal — the sea block beneath */}
       <mesh position={[0, -1.3, 0]} receiveShadow>
         <boxGeometry args={[matrix.size + 1.2, 2.6, matrix.size + 1.2]} />
         <meshStandardMaterial color={theme.groundColor} roughness={0.9} />
       </mesh>
+
+      {/* Dynamic Point Lights for night time */}
+      {isNight && view === 'scene' &&
+        lightSources.map((p, i) => (
+          <pointLight
+            key={`light-${i}`}
+            position={[p.col - half, p.y + p.size / 2, p.row - half]}
+            color={p.light!.color}
+            intensity={p.light!.intensity}
+            distance={p.light!.distance}
+            decay={2}
+          />
+        ))}
     </group>
   );
 }

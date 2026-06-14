@@ -22,10 +22,20 @@ function Lighting({
   fitRadius: number;
 }) {
   const view = useView((s) => s.view);
+  const time = useView((s) => s.time);
   const dir = useRef<THREE.DirectionalLight>(null!);
   const amb = useRef<THREE.AmbientLight>(null!);
   const hemi = useRef<THREE.HemisphereLight>(null!);
   const k = useRef(view === 'scan' ? 1 : 0);
+
+  const isDay = time >= 6 && time < 18;
+  const activeTime = isDay ? time : (time < 6 ? time + 12 : time - 12);
+  const angle = ((activeTime - 6) / 12) * Math.PI;
+  
+  const radius = lightDist * 1.5;
+  const lightX = -Math.cos(angle) * radius;
+  const lightY = Math.max(0.1, Math.sin(angle)) * radius;
+  const lightZ = lightDist * 0.65;
 
   // Scan view flattens to near-shadowless lighting that PRESERVES material
   // contrast (sand light, sea dark) — total intensity stays ~1 so nothing clips.
@@ -48,7 +58,7 @@ function Lighting({
         ref={dir}
         color={sun}
         intensity={1.3}
-        position={[-lightDist * 0.5, lightDist * 1.2, lightDist * 0.65]}
+        position={[lightX, lightY, lightZ]}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}

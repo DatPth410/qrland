@@ -29,6 +29,12 @@ export function Overlay({
 
   // editable payload — re-renders the island a short beat after you stop typing
   const [draft, setDraft] = useState(text);
+  // keep the field in sync when the payload changes from OUTSIDE the input
+  // (e.g. switching template loads that world's sample link) — without this the
+  // stale draft re-applies after the debounce and reverts the URL.
+  useEffect(() => {
+    setDraft(text);
+  }, [text]);
   useEffect(() => {
     if (draft.trim() === text) return;
     const id = window.setTimeout(() => onApplyUrl(draft), 450);
@@ -94,6 +100,24 @@ export function Overlay({
             }}
           />
           {error && <span className="url-error">{error}</span>}
+        </label>
+        <label className="url-field" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-dim, #888)' }}>
+            <span>Time of Day</span>
+            <span>
+              {Math.floor(useView((s) => s.time)).toString().padStart(2, '0')}:
+              {Math.floor((useView((s) => s.time) % 1) * 60).toString().padStart(2, '0')}
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="23.99"
+            step="0.1"
+            value={useView((s) => s.time)}
+            onChange={(e) => useView.getState().setTime(parseFloat(e.target.value))}
+            style={{ width: '100%', cursor: 'pointer' }}
+          />
         </label>
       </div>
 

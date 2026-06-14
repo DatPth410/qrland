@@ -57,13 +57,21 @@ export interface PropVoxel {
   /** y-plane an `isoOnly` prop folds down into during the scan transition
    *  (defaults to its own base `y`, i.e. shrink in place). */
   collapseTo?: number;
-  /** if true (with `isoOnly`), the prop does NOT shrink away when scanning — it
+  /** if true, the prop does NOT shrink away when scanning — it
    *  flattens into a full, flush coloured CELL: a solid column from the ground up
    *  to `collapseTo` at full cell width, keeping its colour (the way the finder
    *  cells stay a flat square). Lets a folded grove tree leave a flat green tile,
    *  level with its neighbours, instead of vanishing — so the 2D scan view keeps
    *  the grove's colour. */
   tile?: boolean;
+  /** If true, the prop is rendered with an unlit (bright) material */
+  glowing?: boolean;
+  /** If provided, a physical PointLight is spawned at this prop's position */
+  light?: {
+    color: string;
+    intensity: number;
+    distance: number;
+  };
 }
 
 export interface QRTheme {

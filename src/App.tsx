@@ -4,6 +4,7 @@ import { Overlay } from './ui/Overlay';
 import { generateQR } from './qr/generate';
 import { verifyCanvas } from './qr/verify';
 import { themes, defaultTheme } from './scene/themes';
+import { useView } from './state/useView';
 
 // ECC H + a forced floor version: enough modules and error-correction blocks
 // that the central island/pavilion (a contiguous overwrite of the center) stays
@@ -15,6 +16,30 @@ export default function App() {
   const [theme, setTheme] = useState(defaultTheme);
   const [url, setUrl] = useState(defaultTheme.sampleText ?? 'https://anthropic.com');
   const [error, setError] = useState<string | null>(null);
+
+  const time = useView((s) => s.time);
+
+  const activeTheme = useMemo(() => {
+    const isNight = time < 6 || time >= 18;
+    if (!isNight) return theme;
+    
+    // Twilight / Night adjustment
+    const nightTheme = { ...theme };
+    
+    // Dim the sky
+    nightTheme.background = '#06080f'; // Dark night sky
+    nightTheme.background2 = '#101626'; 
+    nightTheme.fog = '#06080f';
+
+    // Dim the sun and ambient
+    nightTheme.sunColor = '#5e759e'; // Blueish moonlight
+    nightTheme.ambient = (theme.ambient ?? 0.5) * 0.35;
+    
+    // Dim the pedestal / ground
+    nightTheme.groundColor = '#0f1217';
+
+    return nightTheme;
+  }, [theme, time]);
 
   // `url` is only ever set to a value we've already validated, so this can't throw
   const matrix = useMemo(() => generateQR(url, QR_OPTS), [url]);
@@ -52,7 +77,7 @@ export default function App() {
 
   return (
     <>
-      <QRScene matrix={matrix} theme={theme} />
+      <QRScene matrix={matrix} theme={activeTheme} />
       <Overlay
         text={matrix.text}
         themes={themes}

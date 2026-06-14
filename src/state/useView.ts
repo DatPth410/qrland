@@ -15,7 +15,12 @@ interface ViewState {
   /** latest scannability self-check result, or null if not run yet */
   scan: ScanResult | null;
   setScan: (r: ScanResult) => void;
+  time: number;
+  setTime: (t: number) => void;
 }
+
+const now = new Date();
+const currentHour = now.getHours() + now.getMinutes() / 60;
 
 export const useView = create<ViewState>((set) => ({
   view: 'scene',
@@ -23,4 +28,6 @@ export const useView = create<ViewState>((set) => ({
   setView: (view) => set({ view }),
   scan: null,
   setScan: (scan) => set({ scan }),
+  time: currentHour,
+  setTime: (time) => set({ time }),
 }));

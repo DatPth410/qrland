@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { PropVoxel, QRTheme } from '../theme';
 import type { QRMatrix } from '../../qr/generate';
+import { makeDimmer } from '../scanContrast';
 
 /**
  * Cycladic archipelago. Dark QR modules become raised LIGHT sand; light modules
@@ -106,6 +107,13 @@ const shade = (() => {
     return `#${c.getHexString()}`;
   };
 })();
+
+// Top-down scan contrast. 1 = original palette gap; lower melts the code into the
+// terrain. Measured clean-decode floor is ~0.37 top-down (this theme's tighter
+// whitewash/Aegean palette + data-dense church need more gap than the others); 0.55
+// keeps a ~1.5× real-world margin. See ../scanContrast (globalThis.__scanC tunes live).
+const SCAN_CONTRAST = 0.55;
+const { pair: dimPair, scanC } = makeDimmer(SCAN_CONTRAST);
 
 function rand2(a: number, b: number): number {
   let h = (Math.imul(a + 7, 73856093) ^ Math.imul(b + 13, 19349663)) >>> 0;
@@ -350,9 +358,34 @@ function buildChurch(
     // EC does NOT protect) survives and the decoder can still lock onto the grid.
     const inKeepPatch = Math.max(Math.abs(x), Math.abs(z)) <= DOME_KEEP_R;
     if (isDome && !inKeepPatch) continue;
-    if (layer <= 1) v.color = isDark ? QR_PLAZA_LIGHT : QR_PLAZA_DARK; // plaza floor
-    else v.color = isDark ? QR_WALL_LIGHT : QR_WALL_DARK;
+    if (layer <= 1) {
+      const p = dimPair(QR_PLAZA_LIGHT, QR_PLAZA_DARK); // plaza floor
+      v.color = isDark ? p.light : p.dark;
+    } else {
+      const p = dimPair(QR_WALL_LIGHT, QR_WALL_DARK);
+      v.color = isDark ? p.light : p.dark;
+    }
   }
+
+  // Warm streetlamps / projectors for the plaza at night
+  const lampColor = '#ffcc88';
+  for (const [lx, lz] of [[BODY_R + 3, BODY_R + 3], [-BODY_R - 3, BODY_R + 3], [BODY_R + 3, -BODY_R - 3], [-BODY_R - 3, -BODY_R - 3]]) {
+    extras.push({
+      col: ccol + lx,
+      row: crow + lz,
+      y: baseY + 2.5,
+      size: 0.3,
+      color: lampColor,
+      glowing: true,
+      isoOnly: true,
+      light: { color: lampColor, intensity: 3.0, distance: 16 },
+    });
+  }
+  // Internal glow for the church
+  extras.push({
+    col: ccol, row: crow, y: baseY + 4, size: 0.1, color: '#ffcc88', glowing: true, isoOnly: true,
+    light: { color: '#ffcc88', intensity: 4.5, distance: 18 }
+  });
 
   return [...map.values(), ...extras];
 }
@@ -450,7 +483,7 @@ function buildWall(
     vox.push({ col, row, y: baseY + 2, size: 1, color: WHITE }); // whitewashed side
     vox.push({ col, row, y: baseY + 3, size: 1, color: WHITE_SH }); // cap (encodes)
   }
-  encodeTops(vox, matrix, { light: QR_WALL_LIGHT, dark: QR_WALL_DARK });
+  encodeTops(vox, matrix, dimPair(QR_WALL_LIGHT, QR_WALL_DARK));
   return vox;
 }
 
@@ -478,7 +511,7 @@ function buildPergola(
   for (let x = -1; x <= 1; x++)
     for (let z = -1; z <= 1; z++)
       vox.push({ col: ccol + ox + x, row: crow + oz + z, y: baseY + 2 + postH, size: 1, color: PERGOLA_POST });
-  encodeTops(vox, matrix, { light: QR_WALL_LIGHT, dark: QR_WALL_DARK });
+  encodeTops(vox, matrix, dimPair(QR_WALL_LIGHT, QR_WALL_DARK));
   return vox;
 }
 
@@ -567,8 +600,8 @@ export const cycladicTheme: QRTheme = {
     }
     const center = (modules - 1) / 2;
     const rMod = Math.hypot(qCol - center, qRow - center);
-    if (rMod <= INNER_R) return { height: SAND_H, color: shade(GROUND_LIGHT, (rand - 0.5) * 0.05) };
-    return { height: SAND_H - 0.15 + rand * SAND_VAR, color: shade(SAND, (rand - 0.5) * 0.04) };
+    if (rMod <= INNER_R) return { height: SAND_H, color: shade(dimPair(GROUND_LIGHT, GROUND_DARK).light, (rand - 0.5) * 0.05 * scanC()) };
+    return { height: SAND_H - 0.15 + rand * SAND_VAR, color: shade(dimPair(SAND, SEA).light, (rand - 0.5) * 0.04 * scanC()) };
   },
 
   // light modules: flat DARK-BROWN tile across the church grounds (so no blue sea
@@ -580,8 +613,8 @@ export const cycladicTheme: QRTheme = {
       return { height: FIN_MOAT_H, scanHeight: SAND_H, color: FINDER_SLATE };
     const center = (modules - 1) / 2;
     const rMod = Math.hypot(qCol - center, qRow - center);
-    if (rMod <= INNER_R) return { height: SAND_H, color: shade(GROUND_DARK, (rand - 0.5) * 0.06) };
-    return { height: SEA_H, color: SEA };
+    if (rMod <= INNER_R) return { height: SAND_H, color: shade(dimPair(GROUND_LIGHT, GROUND_DARK).dark, (rand - 0.5) * 0.06 * scanC()) };
+    return { height: SEA_H, color: dimPair(SAND, SEA).dark };
   },
 
   props: (matrix: QRMatrix): PropVoxel[] => {
