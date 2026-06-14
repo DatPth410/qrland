@@ -3,6 +3,7 @@ import { QRScene } from './scene/QRScene';
 import { Overlay } from './ui/Overlay';
 import { generateQR } from './qr/generate';
 import { verifyCanvas } from './qr/verify';
+import { decodeImageFile } from './qr/decodeImage';
 import { themes, defaultTheme } from './scene/themes';
 import { useView } from './state/useView';
 
@@ -71,8 +72,12 @@ export default function App() {
 
   // dev helper: window.__scanCheck() decodes the live canvas (use in scan view)
   useEffect(() => {
-    (window as unknown as { __scanCheck: () => unknown }).__scanCheck = () =>
-      verifyCanvas(document.querySelector('canvas'), matrix.text);
+    const w = window as unknown as {
+      __scanCheck: () => unknown;
+      __decodeImageFile: typeof decodeImageFile;
+    };
+    w.__scanCheck = () => verifyCanvas(document.querySelector('canvas'), matrix.text);
+    w.__decodeImageFile = decodeImageFile;
   }, [matrix]);
 
   return (

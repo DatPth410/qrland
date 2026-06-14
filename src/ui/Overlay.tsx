@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useView } from '../state/useView';
 import { verifyCanvas } from '../qr/verify';
+import { decodeImageFile } from '../qr/decodeImage';
 import type { QRTheme } from '../scene/theme';
 
 interface OverlayProps {
@@ -26,6 +27,12 @@ export function Overlay({
   const scan = useView((s) => s.scan);
   const setScan = useView((s) => s.setScan);
   const [checking, setChecking] = useState(false);
+
+  // upload-a-QR-image state
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   // editable payload — re-renders the island a short beat after you stop typing
   const [draft, setDraft] = useState(text);
@@ -58,6 +65,21 @@ export function Overlay({
     window.setTimeout(attempt, 900);
   };
 
+  // decode a QR image the user picked or dropped, then apply its payload
+  const handleFile = async (file: File | null | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    const { text: decoded, error: decodeError } = await decodeImageFile(file);
+    setUploading(false);
+    if (decoded) {
+      setDraft(decoded);
+      onApplyUrl(decoded);
+    } else {
+      setUploadError(decodeError ?? 'Couldn’t read that QR code.');
+    }
+  };
+
   const dotClass = scan ? (scan.ok ? 'dot ok' : 'dot bad') : 'dot';
   const statusText = checking
     ? 'Checking…'
@@ -71,7 +93,19 @@ export function Overlay({
 
   return (
     <div className="overlay">
-      <div className="panel title">
+      <div
+        className={`panel title ${dragOver ? 'drag-over' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          handleFile(e.dataTransfer.files?.[0]);
+        }}
+      >
         <h1>QRLand</h1>
         <div className="theme-switch" role="tablist" aria-label="Template">
           {themes.map((t) => (
@@ -94,13 +128,38 @@ export function Overlay({
             spellCheck={false}
             autoComplete="off"
             placeholder="https://your-link.com"
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (uploadError) setUploadError(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') onApplyUrl(draft);
             }}
           />
           {error && <span className="url-error">{error}</span>}
         </label>
+
+        <div className="upload-row">
+          <input
+            ref={fileRef}
+            className="upload-input"
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              handleFile(e.target.files?.[0]);
+              e.target.value = ''; // let the same file be re-picked
+            }}
+          />
+          <button
+            type="button"
+            className="upload-btn"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? 'Reading…' : 'Upload QR image — or drop one here'}
+          </button>
+          {uploadError && <span className="url-error">{uploadError}</span>}
+        </div>
         <label className="url-field" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-dim, #888)' }}>
             <span>Time of Day</span>

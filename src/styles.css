@@ -150,6 +150,56 @@ canvas {
   color: #fca5a5;
 }
 
+.upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.upload-input {
+  display: none;
+}
+
+.upload-btn {
+  appearance: none;
+  width: 270px;
+  max-width: 62vw;
+  border: 1px dashed var(--ui-border);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--ui-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.upload-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--ui-fg);
+}
+
+.upload-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* highlight the whole title panel while a file is dragged over it */
+.panel.title.drag-over {
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.35),
+    0 0 0 2px rgba(255, 255, 255, 0.25) inset;
+}
+
 .toolbar {
   position: absolute;
   bottom: 26px;

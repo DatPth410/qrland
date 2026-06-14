@@ -78,6 +78,9 @@ const FIN_DEEP_H = GRASS_H - 0.55;
 interface Variant {
   sky: string; sky2: string; fog: string; sun: string; ambient: number;
   lakeLit: string; lakeShallow: string; lakeDeep: string;
+  /** render the lake at full contrast (raw palette), matching the design handoff's
+   *  un-squeezed water, instead of the shared scan-contrast squeeze. */
+  lakeRaw?: boolean;
   padCol: string; lotus: string; lotusN: number; padN: number;
   crown: string;
 }
@@ -85,7 +88,10 @@ interface Variant {
 export const VARIANTS: Record<string, Variant> = {
   dawn: {
     sky: '#cdd8d2', sky2: '#e9eee8', fog: '#dde4dd', sun: '#fbf3df', ambient: 0.70,
-    lakeLit: '#baddce', lakeShallow: '#466e60', lakeDeep: '#183630',
+    // "Misty Dawn" lake — authoritative values from the Claude Design handoff
+    // (qrland-thaprua-preview.html / theme-thaprua.js): a soft, hazy sage-green,
+    // rendered raw (full contrast) exactly as the design preview does.
+    lakeLit: '#a4c0b5', lakeShallow: '#5c8275', lakeDeep: '#2f4f49', lakeRaw: true,
     padCol: '#5c7f4e', lotus: '#efe6ec', lotusN: 0, padN: 22,
     crown: '#9d9379',
   },
@@ -391,9 +397,14 @@ function makeTree(col: number, row: number, gy: number, rnd: number, heightScale
 export function makeThapRua(variantKey: keyof typeof VARIANTS | string = 'dawn'): QRTheme {
   const V = VARIANTS[variantKey] ?? VARIANTS.dawn;
   // the lake is a dark/light pair too: V.lakeLit (dark-module material) vs the
-  // shallow→deep gradient (light-module material). Squeeze both toward their shared
-  // mid so the water's contrast drops with everything else.
+  // shallow→deep gradient (light-module material). Normally we squeeze both toward
+  // their shared mid so the water's contrast drops with everything else — but a
+  // `lakeRaw` variant (Misty Dawn) keeps the design's full-contrast, un-squeezed
+  // water so it matches the handoff preview exactly.
   const lakeMid = (lum(V.lakeLit) + lum(V.lakeShallow)) / 2;
+  const lakeLitC = V.lakeRaw ? V.lakeLit : squeeze(V.lakeLit, lakeMid);
+  const lakeShallowC = V.lakeRaw ? V.lakeShallow : squeeze(V.lakeShallow, lakeMid);
+  const lakeDeepC = V.lakeRaw ? V.lakeDeep : squeeze(V.lakeDeep, lakeMid);
 
   return {
     name: 'Tháp Rùa',
@@ -424,7 +435,7 @@ export function makeThapRua(variantKey: keyof typeof VARIANTS | string = 'dawn')
         case 'lake':
           // a reflective "lit" ripple — keeps the lake reading as a flat
           // shimmering plane (lit vs deep) rather than a lawn of pads.
-          return { height: WATER_H + 0.03, scanHeight: GRASS_H, color: shade(squeeze(V.lakeLit, lakeMid), v) };
+          return { height: WATER_H + 0.03, scanHeight: GRASS_H, color: shade(lakeLitC, v) };
       }
       return { height: GRASS_H, color: shade(dimPair(GRASS_LIGHT, GRASS_DARK).light, v) };
     },
@@ -442,7 +453,7 @@ export function makeThapRua(variantKey: keyof typeof VARIANTS | string = 'dawn')
           // both endpoints squeezed toward the lake's mid so contrast drops too
           const d = fromShore(qCol, qRow, modules);
           const t = THREE.MathUtils.clamp(d / 16, 0, 1);
-          const c = new THREE.Color(squeeze(V.lakeShallow, lakeMid)).lerp(new THREE.Color(squeeze(V.lakeDeep, lakeMid)), t);
+          const c = new THREE.Color(lakeShallowC).lerp(new THREE.Color(lakeDeepC), t);
           return { height: WATER_H, scanHeight: GRASS_H, color: `#${c.getHexString()}` };
         }
       }
