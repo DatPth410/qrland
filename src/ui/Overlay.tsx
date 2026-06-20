@@ -27,6 +27,9 @@ export function Overlay({
   const scan = useView((s) => s.scan);
   const setScan = useView((s) => s.setScan);
   const [checking, setChecking] = useState(false);
+  // on mobile the URL / upload / time controls collapse behind a toggle so the
+  // island gets the whole screen — open is forced on at desktop widths via CSS
+  const [expanded, setExpanded] = useState(false);
 
   // upload-a-QR-image state
   const fileRef = useRef<HTMLInputElement>(null);
@@ -106,7 +109,23 @@ export function Overlay({
           handleFile(e.dataTransfer.files?.[0]);
         }}
       >
-        <h1>QRLand</h1>
+        <div className="title-head">
+          <h1>QRLand</h1>
+          <div className="head-actions">
+            <span className={`${dotClass} head-status`} title={statusText} aria-hidden />
+            <button
+              type="button"
+              className="collapse-toggle"
+              aria-expanded={expanded}
+              aria-label={expanded ? 'Hide controls' : 'Show controls'}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <div className="theme-switch" role="tablist" aria-label="Template">
           {themes.map((t) => (
             <button
@@ -120,6 +139,7 @@ export function Overlay({
             </button>
           ))}
         </div>
+        <div className={`title-collapsible ${expanded ? 'open' : ''}`}>
         <label className="url-field">
           <span className="url-label">Encodes</span>
           <input
@@ -178,6 +198,7 @@ export function Overlay({
             style={{ width: '100%', cursor: 'pointer' }}
           />
         </label>
+        </div>
       </div>
 
       <div className="status panel" style={{ padding: '8px 12px' }}>

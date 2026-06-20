@@ -223,6 +223,7 @@ canvas {
   padding: 11px 18px;
   border-radius: 999px;
   cursor: pointer;
+  white-space: nowrap;
   transition:
     transform 0.12s ease,
     background 0.2s ease,
@@ -284,4 +285,127 @@ canvas {
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.35);
   pointer-events: none;
   user-select: none;
+}
+
+/* ── collapsible header (mobile) ───────────────────────────────────────── */
+.title-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* the toggle + header status dot are mobile-only; on desktop the controls are
+   always shown and the standalone status panel lives top-right */
+.collapse-toggle,
+.head-status {
+  display: none;
+}
+
+/* on desktop the wrapper is layout-transparent so spacing matches the
+   pre-collapse design; the media query below turns it into an animated drawer */
+.title-collapsible {
+  display: contents;
+}
+
+/* ── phones ────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .title {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+  }
+
+  .panel.title {
+    padding: 12px 14px;
+  }
+
+  .collapse-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--ui-border);
+    border-radius: 9px;
+    background: rgba(0, 0, 0, 0.28);
+    color: var(--ui-fg);
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .collapse-toggle:active {
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .collapse-toggle svg {
+    transition: transform 0.25s ease;
+  }
+
+  .collapse-toggle[aria-expanded='true'] svg {
+    transform: rotate(180deg);
+  }
+
+  .head-status {
+    display: inline-block;
+  }
+
+  /* the URL / upload / time controls slide open from the toggle */
+  .title-collapsible {
+    display: block;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition:
+      max-height 0.3s ease,
+      opacity 0.2s ease;
+  }
+
+  .title-collapsible.open {
+    max-height: 420px;
+    opacity: 1;
+  }
+
+  .theme-switch {
+    margin-top: 12px;
+  }
+
+  .theme-tab {
+    font-size: 11px;
+    padding: 6px 4px;
+  }
+
+  .url-input,
+  .upload-btn {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* a full-width title panel would collide with the top-right status panel —
+     the header dot covers it instead */
+  .status {
+    display: none;
+  }
+
+  /* the hint overlaps the buttons on a narrow screen; drop it for a clean base */
+  .hint {
+    display: none;
+  }
+
+  .toolbar {
+    bottom: 18px;
+    gap: 8px;
+  }
+
+  .btn {
+    font-size: 12px;
+    padding: 10px 16px;
+  }
 }

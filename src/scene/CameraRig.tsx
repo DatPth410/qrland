@@ -19,10 +19,7 @@ export function CameraRig({ fitRadius }: { fitRadius: number }) {
   const size = useThree((s) => s.size);
   const view = useView((s) => s.view);
 
-  const sphere = useMemo(
-    () => new THREE.Sphere(new THREE.Vector3(0, 0, 0), fitRadius),
-    [fitRadius],
-  );
+  const center = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const didInit = useRef(false);
   const interacting = useRef(false);
   const lastInteract = useRef(0);
@@ -65,15 +62,28 @@ export function CameraRig({ fitRadius }: { fitRadius: number }) {
     
     const az = currentAz + diff;
     const pol = view === 'scan' ? TOP_POLAR : ISO_POLAR;
+    // scan view shows the axis-aligned QR square, which fits far tighter than the
+    // circumscribed sphere (fitRadius), so the code fills the frame instead of
+    // floating in a sea of margin; scene view keeps the full radius so the
+    // 45°-rotated island isn't clipped. Portrait viewports zoom in a touch more
+    // to spend the extra vertical room on the island.
+    const aspect = size.width / size.height;
+    let radius = fitRadius;
+    if (view === 'scan') {
+      radius = fitRadius * 0.76; // QR fills the frame, keeping ~9% margin so the
+      // quiet zone never touches the edge (stays scannable)
+    } else if (aspect < 1) {
+      radius = fitRadius * 0.92; // portrait: spend the spare vertical room on the island
+    }
     controls.setOrbitPoint(0, 0, 0);
-    controls.fitToSphere(sphere, false);
+    controls.fitToSphere(new THREE.Sphere(center, radius), false);
     controls.rotateTo(az, pol, animate);
     if (!animate) {
       controls.update(0);
       gl.render(scene, camera);
     }
     invalidate();
-  }, [controls, view, size.width, size.height, sphere, gl, scene, camera, invalidate]);
+  }, [controls, view, size.width, size.height, fitRadius, center, gl, scene, camera, invalidate]);
 
   // gentle idle turntable in scene view
   useFrame((_, delta) => {
