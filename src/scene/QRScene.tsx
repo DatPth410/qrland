@@ -93,6 +93,13 @@ export function QRScene({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
 
   const sun = theme.sunColor ?? '#ffffff';
   const lightDist = matrix.size;
+  // The 16° lens is a long lens, so framing the island (fitToSphere) sits the
+  // camera far back. On a tall/portrait viewport the *horizontal* fov is the
+  // limiter, pushing the fit distance past 10× the world size — a fixed far
+  // plane clipped the whole scene on phones (blank screen). Scale the clip
+  // planes with the world so the island stays framed at any aspect ratio.
+  const camFar = lightDist * 40;
+  const camNear = lightDist * 0.5;
   const sky = `linear-gradient(180deg, ${theme.background} 0%, ${
     theme.background2 ?? theme.background
   } 100%)`;
@@ -108,7 +115,7 @@ export function QRScene({ matrix, theme }: { matrix: QRMatrix; theme: QRTheme })
         shadows
         dpr={[1, 2]}
         gl={{ preserveDrawingBuffer: true, antialias: true, alpha: true }}
-        camera={{ fov: 16, near: 0.1, far: 500, position: [lightDist, lightDist, lightDist] }}
+        camera={{ fov: 16, near: camNear, far: camFar, position: [lightDist, lightDist, lightDist] }}
       >
         <Lighting
           sun={sun}
